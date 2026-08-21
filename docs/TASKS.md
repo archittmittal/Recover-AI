@@ -14,17 +14,17 @@
 
 | # | Task | Status | Owner | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| 1.1 | Initialize Next.js 15 project with TypeScript | ⬜ | — | `npx create-next-app@latest recover-ai --typescript --tailwind --app --src-dir` |
-| 1.2 | Install core dependencies | ⬜ | — | `drizzle-orm`, `better-sqlite3`, `@google/generative-ai`, `nanoid`, `date-fns`, `recharts`, `lucide-react` |
-| 1.3 | Install + configure shadcn/ui | ⬜ | — | `npx shadcn@latest init` + add: button, card, badge, table, tabs, dialog, input, separator, scroll-area |
-| 1.4 | Set up Drizzle ORM + SQLite connection | ⬜ | — | `drizzle.config.ts`, `src/lib/db/index.ts` |
-| 1.5 | Define database schema (all 5 tables) | ⬜ | — | `src/lib/db/schema.ts` — customers, payment_failures, recovery_journeys, recovery_actions, audit_logs |
-| 1.6 | Run initial Drizzle migration | ⬜ | — | `npx drizzle-kit generate` + `npx drizzle-kit migrate` |
-| 1.7 | Create `.env.example` with all required vars | ⬜ | — | Razorpay test keys, Gemini API key, DB path |
-| 1.8 | Create utility modules | ⬜ | — | `ids.ts` (nanoid prefixed IDs), `time.ts` (IST helpers, contact-hours check), `audit.ts` (log writer) |
-| 1.9 | Build synthetic data seed script | ⬜ | — | `src/lib/db/seed.ts` — 50+ records across all 6 failure categories |
-| 1.10 | Create seed API route | ⬜ | — | `POST /api/simulator/seed` — triggers seed script, returns count |
-| 1.11 | Verify foundation: `npm run dev` boots, seed works | ⬜ | — | Smoke test end-to-end |
+| 1.1 | Initialize Next.js 15 project with TypeScript | ✅ | Agent | Done |
+| 1.2 | Install core dependencies | ✅ | Agent | Done |
+| 1.3 | Install + configure shadcn/ui | ✅ | Agent | Done |
+| 1.4 | Set up Drizzle ORM + SQLite connection | ✅ | Agent | Done |
+| 1.5 | Define database schema (all 5 tables) | ✅ | Agent | Done |
+| 1.6 | Run initial Drizzle migration | ✅ | Agent | Done |
+| 1.7 | Create `.env.example` with all required vars | ✅ | Agent | Done |
+| 1.8 | Create utility modules | ✅ | Agent | Done |
+| 1.9 | Build synthetic data seed script | ✅ | Agent | Done |
+| 1.10 | Create seed API route | ✅ | Agent | Done |
+| 1.11 | Verify foundation: `npm run dev` boots, seed works | ✅ | Agent | Done |
 
 ---
 
@@ -159,7 +159,7 @@
 
 | Phase | Total Tasks | Done | In Progress | Not Started |
 | :--- | :--- | :--- | :--- | :--- |
-| Phase 1: Foundation | 11 | 0 | 0 | 11 |
+| Phase 1: Foundation | 11 | 11 | 0 | 0 |
 | Phase 2: Agent Core | 14 | 0 | 0 | 14 |
 | Phase 3: Communication | 8 | 0 | 0 | 8 |
 | Phase 4: Dashboard | 13 | 0 | 0 | 13 |
@@ -167,7 +167,7 @@
 | Phase 6: Polish | 9 | 0 | 0 | 9 |
 | Phase 7: Correctness & Verification | 11 | 0 | 0 | 11 |
 | Phase 8: Evaluation & Credibility | 11 | 0 | 0 | 11 |
-| **Total** | **83** | **0** | **0** | **83** |
+| **Total** | **83** | **11** | **0** | **72** |
 
 ### Critical path
 
@@ -190,4 +190,4 @@ one is load-bearing for a specific judging criterion:
 | :--- | :--- | :--- |
 | Razorpay test API keys | Phase 2 (task 2.3) | ⬜ Need to create Razorpay account & get test keys |
 | Gemini API key | Phase 2 (task 2.6) | ⬜ Need to get from Google AI Studio |
-| Node.js 18+ installed | Phase 1 (task 1.1) | ⬜ Verify local environment |
+| Node.js 18+ installed | Phase 1 (task 1.1) | ✅ Verified (running on Node.js v25) |
