@@ -28,7 +28,7 @@ jobs:
         run: npm ci
 
       - name: TypeScript Compilation Check
-        run: npx tsc --noEmit
+        run: npm run typecheck
 
       - name: Linting Check
         run: npm run lint
