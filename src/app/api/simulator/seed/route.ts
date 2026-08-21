@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { seedDatabase } from '@/lib/db/seed';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST() {
   try {
     const count = await seedDatabase();
