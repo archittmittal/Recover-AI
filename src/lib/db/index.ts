@@ -36,7 +36,7 @@ function getOrCreateDb(): BetterSQLite3Database<typeof schema> {
 export const db = new Proxy({} as BetterSQLite3Database<typeof schema>, {
   get(_target, prop) {
     const instance = getOrCreateDb();
-    const val = (instance as Record<string | symbol, unknown>)[prop];
+    const val = (instance as unknown as Record<string | symbol, unknown>)[prop];
     return typeof val === 'function' ? (val as (...args: unknown[]) => unknown).bind(instance) : val;
   },
 });
