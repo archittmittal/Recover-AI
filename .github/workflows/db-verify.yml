@@ -1,0 +1,44 @@
+name: Database & Schema Verification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/lib/db/**'
+      - 'drizzle.config.ts'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/lib/db/**'
+      - 'drizzle.config.ts'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  schema-sync:
+    name: Check Schema Migration Drift
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Generate Schema Diff Check
+        run: |
+          npx drizzle-kit generate
+          if [ -n "$(git status --porcelain src/lib/db/migrations)" ]; then
+            echo "::error::Schema changes in src/lib/db/schema.ts are not synchronized with src/lib/db/migrations/."
+            echo "Please run 'npx drizzle-kit generate' locally and commit the migration files."
+            git status --porcelain src/lib/db/migrations
+            exit 1
+          fi
