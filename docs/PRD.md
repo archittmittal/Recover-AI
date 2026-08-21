@@ -33,10 +33,38 @@ These are the **non-negotiable** criteria from the buildathon track description:
 | # | Criterion | How RecoverAI Meets It |
 | :--- | :--- | :--- |
 | 1 | **Don't just identify the problem** | Agent auto-executes recovery actions (payment links, smart retries, conversational outreach) — not just alerts |
-| 2 | **Measured money recovered across a batch** | Dashboard shows total ₹ at risk vs ₹ recovered across 50+ synthetic records, with per-scenario and per-channel breakdown |
+| 2 | **Measured money recovered across a batch** | Dashboard shows total ₹ at risk vs ₹ recovered across 50+ synthetic records, per-scenario and per-channel — **and against a no-agent and a rules-only baseline**, so the headline is the delta the agent is actually responsible for, not an unfalsifiable standalone percentage |
 | 3 | **Compliant escalation** | Multi-channel escalation (WhatsApp → SMS → Voice) respecting RBI 8AM–7PM contact hours and TRAI DLT templates |
 | 4 | **Stopping rules** | 5 hard stops: payment success, customer opt-out ("STOP"), attempt exhaustion (3 max), contact-hours violation, DND status |
 | 5 | **Audit trail** | Immutable, append-only log of every webhook, classification, decision, message, and customer response — viewable as an interactive timeline |
+
+### 3.1 Judging Criteria Map
+
+The track scores four things. Each needs a specific artefact, not a general hope that the project is good.
+
+| Criterion | What it actually asks | Artefact that answers it |
+| :--- | :--- | :--- |
+| **Problem taste** | "did you pick something that actually matters" | Problem statement grounded in cited Indian market data (§2 of PROJECT_DOCUMENTATION) — UPI decline rates, 70–80% cart abandonment, ₹7.34–8.1 lakh crore in delayed B2B receivables |
+| **Build quality** | "does it run, is it structured, would you trust it" | Zero-config boot, hosted demo URL, layered `src/lib` with no React imports, Vitest suites on the correctness-critical paths, timing-safe signature verification |
+| **AI judgment** | "the right tool in the right place, **and where you chose not to use one**" | PROJECT_DOCUMENTATION §8.5 — an explicit table of every place an LLM was rejected in favour of deterministic code, with reasoning |
+| **Failure recovery** | "what broke, and what you did about it" | `docs/ENGINEERING_LOG.md`, written continuously during the build rather than reconstructed at the end |
+
+### 3.2 Submission Deliverables
+
+The application form asks for exactly 12 items. The build-related ones map as follows:
+
+| Form field | Source | Status |
+| :--- | :--- | :--- |
+| Project name | RecoverAI | Ready |
+| What it solves | PRD §1 + PROJECT_DOCUMENTATION §2 | Ready |
+| Track | Track 3 — AI Revenue Recovery | Ready |
+| Public GitHub repo | `github.com/archittmittal/Recover-AI` | Ready |
+| 5-min pitch video | Task 6.9 script → recorded walkthrough | Pending build |
+| **What broke, and how you got out** | `docs/ENGINEERING_LOG.md` | **Started — must be kept continuously** |
+
+> The last field is the one the organisers say they read first. It cannot be honestly reconstructed
+> from memory the night before the deadline, which is why the engineering log is a live document
+> maintained from the first commit rather than a Phase 6 writing task.
 
 ---
 
@@ -96,7 +124,12 @@ These are the **non-negotiable** criteria from the buildathon track description:
 | **NF-04** | Responsive UI | Dashboard works on both desktop and tablet viewports |
 | **NF-05** | Type safety | Full TypeScript with strict mode, Drizzle ORM for type-safe queries |
 | **NF-06** | LLM fallback | Template-based fallback messages if Gemini API is unreachable or returns invalid JSON |
-| **NF-07** | Idempotency | Webhook processing is idempotent — replaying the same event does not create duplicate records |
+| **NF-07** | Idempotency | Webhook processing is idempotent — replaying the same event does not create duplicate records. Backed by a dedicated `webhook_events` table claiming the `event_id` before processing begins |
+| **NF-08** | Reproducibility | Seeded RNG. The same batch produces identical metrics on every machine and every run — an evaluator must be able to reproduce any number we quote |
+| **NF-09** | Automated tests | Vitest suites covering stopping rules, contact-hours boundaries, classifier coverage, and webhook idempotency. These are correctness-critical paths; manual verification is not sufficient |
+| **NF-10** | Injectable clock | No module reads the system clock directly. Enables demo time-travel and deterministic time-boundary tests |
+| **NF-11** | Graceful LLM degradation | Gemini outage, malformed JSON, or rate-limiting degrades message quality via template fallback — it never halts recovery or crashes a batch |
+| **NF-12** | Timing-safe signature check | Webhook HMAC comparison uses `crypto.timingSafeEqual` over the raw request body, never `===` on a parsed-and-reserialised payload |
 
 ---
 
@@ -109,7 +142,30 @@ These are the **non-negotiable** criteria from the buildathon track description:
 | User authentication | No login system; single-tenant demo |
 | Mobile app | Web dashboard only |
 | Multi-merchant support | Single merchant context for demo simplicity |
-| Production deployment (Vercel/AWS) | Local development only for evaluation |
+
+### 6.1 Reconsidered: hosted demo deployment
+
+An earlier draft placed deployment out of scope as "local development only". That was the wrong call
+and is now **in scope** (see M7).
+
+The reasoning: evaluators are reviewing a large number of submissions under time pressure. A live URL
+converts "clone the repo, install dependencies, obtain two sets of API keys, hope it boots" into one
+click. Every step of setup friction is a chance the project is never seen running at all, and the work
+is worth nothing if it is not seen.
+
+**The blocker this creates, stated honestly:** SQLite on serverless is not viable — the filesystem is
+ephemeral, so writes vanish between invocations and concurrent instances do not share state. The demo
+depends on writes (seeding, journeys, audit logs), so a naive Vercel deploy would appear to work and
+then silently lose data mid-demo, which is worse than not deploying.
+
+Resolution: keep `better-sqlite3` for local development, and deploy against **libSQL/Turso**, which
+speaks the SQLite dialect and is supported by Drizzle. The driver becomes an environment-selected
+detail behind the existing DB module; no query or schema code changes. If that migration proves more
+expensive than it looks, the fallback is a persistent-disk host (Fly.io/Railway) rather than
+abandoning the hosted demo.
+
+The local `git clone` path remains fully supported and is still the primary evaluation route — the
+hosted demo is an addition, not a replacement.
 
 ---
 
@@ -253,6 +309,8 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 | **M4: Dashboard** | Metrics board, customer table, audit timeline | All metrics computed, timeline renders correctly |
 | **M5: Simulator** | Customer simulator, batch controls, opt-out flow | Judge can play as customer, stopping rules enforced |
 | **M6: Polish** | Error handling, edge cases, README, demo flow | Clean demo experience, no crashes on edge cases |
+| **M7: Correctness & Verification** | Razorpay API corrections, idempotency table, timing-safe HMAC, Vitest suites, seeded RNG | `npm test` green; batch reproducible run-to-run |
+| **M8: Evaluation & Credibility** | Baseline arms, response model, virtual clock, engineering log, hosted demo | Three-arm comparison reportable; deferral demonstrable; live URL reachable |
 
 ---
 

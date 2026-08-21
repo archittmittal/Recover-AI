@@ -114,7 +114,12 @@ Before submitting a PR, verify:
 - [ ] **Fallback:** LLM-dependent code has template fallback path
 - [ ] **Contact hours:** Any outreach action respects 8AM–7PM IST window
 - [ ] **Idempotency:** Webhook handlers don't create duplicates on replay
-- [ ] **Task tracker:** Updated [TASKS.md](./TASKS.md) with current status
+- [ ] **Tests:** `npm test` passes; new correctness-critical logic has a test
+- [ ] **Clock:** No direct `new Date()` / `Date.now()` — time comes from the injectable `Clock`
+- [ ] **Determinism:** No unseeded randomness in seed or simulation paths
+- [ ] **Boundary honesty:** Agent code does not import from `src/lib/simulation/`
+- [ ] **Issue link:** PR description contains `Closes #<issue-number>`
+- [ ] **Engineering log:** If something broke, it's recorded in [ENGINEERING_LOG.md](./ENGINEERING_LOG.md)
 
 ### 3.4 PR Description Template
 
@@ -123,7 +128,10 @@ Before submitting a PR, verify:
 Brief description of changes.
 
 ## Why
-Link to task in TASKS.md (e.g., "Implements Task 2.5: Failure classifier").
+Closes #<issue-number>
+
+Link to the task (e.g., "Implements Task 2.5: Failure classifier").
+The `Closes #N` line is required — it is what auto-closes the issue on merge.
 
 ## How
 Key implementation details, design decisions.
@@ -141,6 +149,15 @@ How to verify:
 ---
 
 ## 4. Task Lifecycle Protocol
+
+> **Updated 2026-08-21.** [GitHub Issues](https://github.com/archittmittal/Recover-AI/issues) is now the
+> single source of truth for task state, not TASKS.md. Every task has an issue; every PR closes its
+> issue on merge via `Closes #<issue>`. TASKS.md remains the readable overview and should be updated
+> alongside, but if the two ever disagree, **the issue tracker wins**.
+>
+> Concretely, this replaces the manual status-flag dance below: opening a PR *is* marking the task in
+> progress, and merging it *is* marking it done. Do not hand-maintain a status column as the primary
+> record — it will drift, and a drifted tracker is worse than none.
 
 Every task in [TASKS.md](./TASKS.md) follows this exact lifecycle. **No shortcuts.**
 
@@ -360,6 +377,11 @@ When starting a new coding session on RecoverAI, the agent should:
 6. **Don't hardcode amounts** — Always read from DB. LLM must never generate or hallucinate monetary values.
 7. **Don't forget stopping rules** — Before every recovery action, check all 5 stopping conditions.
 8. **Don't create duplicate journeys** — Use idempotency keys (razorpay_payment_id) to prevent duplicate processing.
+9. **Don't call `new Date()` directly** — All time flows through the injectable `Clock`. A direct system-clock read breaks demo time-travel and makes contact-hours tests flaky.
+10. **Don't let agent code import the simulation model** — `src/lib/simulation/` is for the simulator only. If the agent can see the customer response model, it is marking its own homework and every metric becomes meaningless.
+11. **Don't default an unknown `error_source`** — Log `unclassified_source` and route to the exception list. A confident wrong action is worse than an honest unclassified one.
+12. **Don't compare signatures with `===`** — Use `crypto.timingSafeEqual`, and hash the raw body before any JSON parsing.
+13. **Don't call simulated figures "recovered revenue"** — They are simulation output against a declared model. Overstating this is the fastest way to lose an evaluator's trust.
 
 ---
 

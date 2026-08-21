@@ -3,6 +3,11 @@
 **Last Updated:** 2026-08-21  
 **Legend:** ⬜ Not Started · 🟡 In Progress · ✅ Done · ❌ Blocked
 
+> **Source of truth: [GitHub Issues](https://github.com/archittmittal/Recover-AI/issues).**
+> Every task below has a matching issue. Work is done on a branch, opened as a PR containing
+> `Closes #<issue>`, and the issue closes on merge. This file is the readable overview; the issue
+> tracker is the live state. Where the two disagree, the tracker wins.
+
 ---
 
 ## Phase 1: Foundation & Project Setup
@@ -108,6 +113,48 @@
 
 ---
 
+## Phase 7: Correctness & Verification
+
+> Added 2026-08-21 after a documentation review against the live Razorpay API docs. Tasks 7.1–7.4
+> correct factual errors in the original spec; 7.5–7.11 close gaps that the first 61 tasks left open.
+> See [ENGINEERING_LOG.md](./ENGINEERING_LOG.md) for what was wrong and why it mattered.
+
+| # | Task | Status | Owner | Notes |
+| :--- | :--- | :--- | :--- | :--- |
+| 7.1 | Correct Razorpay test-mode failure simulation | ⬜ | — | Spec listed Stripe magic card numbers. Razorpay selects failure on the mock bank page / short OTP |
+| 7.2 | Correct Payment Links notification mediums | ⬜ | — | `notify_by/{medium}` accepts `sms` or `email` only — WhatsApp is simulated in-app |
+| 7.3 | Expand `error_source` taxonomy to full documented enum | ⬜ | — | Add `issuer_bank`, `customer_psp`, `network`, `beneficiary_bank`; no silent default |
+| 7.4 | Timing-safe webhook signature verification | ⬜ | — | `crypto.timingSafeEqual` over the raw body, not `===` |
+| 7.5 | `webhook_events` idempotency table | ⬜ | — | Claim `event_id` before processing; `payload_hash` distinguishes retry from replay |
+| 7.6 | SQLite WAL mode + serialized writes | ⬜ | — | Risk was registered in PRD §12 but never tasked |
+| 7.7 | Vitest setup + config | ⬜ | — | `vitest.config.ts`, `npm test` script |
+| 7.8 | Tests: all 5 stopping rules | ⬜ | — | Isolated + combined; 3-attempt boundary; STOP mid-escalation |
+| 7.9 | Tests: contact-hours IST boundaries | ⬜ | — | 07:59 / 08:00 / 18:59 / 19:00 / 19:01; UTC-vs-IST regression |
+| 7.10 | Tests: classifier, idempotency, state machine | ⬜ | — | Every documented `error_source`; duplicate webhook; illegal transitions |
+| 7.11 | Seeded RNG for reproducible batches | ⬜ | — | Same seed → same numbers on every machine (NF-08) |
+
+---
+
+## Phase 8: Evaluation & Credibility
+
+> The tasks that make the results defensible rather than merely presentable.
+
+| # | Task | Status | Owner | Notes |
+| :--- | :--- | :--- | :--- | :--- |
+| 8.1 | Injectable `Clock` + virtual clock controls | ⬜ | — | Without this, `smart_retry` and contact-hours deferral cannot be demoed at all |
+| 8.2 | Documented customer response model | ⬜ | — | `simulation/response-model.ts` + `docs/SIMULATION_MODEL.md`, benchmark-cited; agent must not import |
+| 8.3 | Baseline comparison harness (arms A/B/C) | ⬜ | — | No-agent vs rules-only vs full agent; headline is C − B |
+| 8.4 | Checkout abandonment sweep job | ⬜ | — | No webhook exists for absence-of-event; idempotent sweep |
+| 8.5 | `merchant_alert` strategy | ⬜ | — | `business`/`internal` failures: surface to merchant, never message the customer |
+| 8.6 | Batch evaluation report + export | ⬜ | — | Reproducible per-arm figures an evaluator can check |
+| 8.7 | Simulation-honesty labelling in UI | ⬜ | — | Every figure captioned as simulation output, never as recovered rupees |
+| 8.8 | `docs/AI_DECISIONS.md` — where we did NOT use AI | ⬜ | — | Explicit judging criterion; currently lives as PROJECT_DOCUMENTATION §8.5 |
+| 8.9 | Maintain `docs/ENGINEERING_LOG.md` continuously | ⬜ | — | Ongoing, not a one-off. The form field organisers read first |
+| 8.10 | Hosted demo deployment | ⬜ | — | libSQL/Turso swap; SQLite does not survive serverless (PRD §6.1) |
+| 8.11 | Responsive + accessibility pass | ⬜ | — | NF-04 was specified but never tasked |
+
+---
+
 ## Progress Summary
 
 | Phase | Total Tasks | Done | In Progress | Not Started |
@@ -118,7 +165,22 @@
 | Phase 4: Dashboard | 13 | 0 | 0 | 13 |
 | Phase 5: Simulator | 6 | 0 | 0 | 6 |
 | Phase 6: Polish | 9 | 0 | 0 | 9 |
-| **Total** | **61** | **0** | **0** | **61** |
+| Phase 7: Correctness & Verification | 11 | 0 | 0 | 11 |
+| Phase 8: Evaluation & Credibility | 11 | 0 | 0 | 11 |
+| **Total** | **83** | **0** | **0** | **83** |
+
+### Critical path
+
+Not all 83 tasks are equal. If time runs short, these are the ones that must not be cut, because each
+one is load-bearing for a specific judging criterion:
+
+| Task | Why it cannot be cut |
+| :--- | :--- |
+| 8.1 Virtual clock | Without it, `smart_retry` and contact-hours deferral are undemonstrable — two of the four strategies and the best compliance evidence |
+| 8.3 Baseline arms | A recovery rate without a baseline is unfalsifiable and reads as marketing |
+| 7.8 Stopping-rule tests | "Would you trust it" — these are the safety invariants |
+| 8.9 Engineering log | The form field the organisers say they read first; cannot be honestly reconstructed late |
+| 7.3 `error_source` taxonomy | Misrouting a large share of UPI traffic in front of Razorpay engineers |
 
 ---
 

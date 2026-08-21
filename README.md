@@ -31,7 +31,7 @@ flowchart LR
 
     A -.->|"payment.failed, subscription.pending,\ncheckout drop-off, invoice.expired"| A
     B -.->|"error_source / error_step / error_reason\n+ LLM fallback for ambiguous cases"| B
-    C -.->|"smart_retry, payment_link,\nconversational, invoice_reminder"| C
+    C -.->|"smart_retry, payment_link, conversational,\ninvoice_reminder, merchant_alert"| C
     D -.->|"WhatsApp -> SMS -> Voice\nstopping rules enforced"| D
     E -.->|"revenue at risk vs recovered\naudit trail per customer"| E
 
@@ -97,6 +97,43 @@ The agent halts outreach immediately, no exceptions, when any of these fire:
 ## Compliance
 
 Built against RBI fair-practice guidelines for outreach, TRAI DLT template rules for SMS, and DPDPA data-minimization principles — never sending PII beyond what a message needs. Full framework in [`docs/PROJECT_DOCUMENTATION.md`](docs/PROJECT_DOCUMENTATION.md#9-compliance-framework).
+
+---
+
+## How the results are measured
+
+A recovery rate quoted on its own is unfalsifiable. "We recovered 62%" invites the immediate question *versus what*, and without an answer the number says nothing about whether the agent is doing anything useful.
+
+Every batch therefore runs three arms over identical seeded data:
+
+| Arm | Behaviour | Question it answers |
+| :--- | :--- | :--- |
+| A. No agent | Detect and record; never reach out | What does doing nothing cost? |
+| B. Rules only | Fixed cadence, one message for everyone, no LLM | How much comes from any dunning at all? |
+| C. Full agent | Classification, per-failure strategy, personalised copy, escalation | What does the intelligence add? |
+
+**The honest headline is C minus B.** Arm B is what a cron job and a message template would have achieved on their own; only the delta is attributable to the agent's judgment. The comparison is built before any numbers exist, so the framing cannot be picked after the fact — and if C turns out to be roughly equal to B, that gets reported too.
+
+The batch is synthetic, so simulated customer behaviour follows a declared response model with benchmark-sourced coefficients, documented in `docs/SIMULATION_MODEL.md` and driven by a fixed seed. The agent cannot import that model — otherwise it would be marking its own homework. Every figure in the dashboard is labelled as simulation output against that model, never as recovered rupees.
+
+---
+
+## Where we deliberately did not use AI
+
+The track scores the right tool in the right place, **and where you chose not to use one**. The governing principle here: an LLM is used where language or ambiguity is the problem, and never where correctness, auditability, or money is the problem.
+
+| Deterministic, no LLM | Why |
+| :--- | :--- |
+| Stopping rules | Safety invariants. A model that honours an opt-out 99% of the time is a compliance incident 1% of the time |
+| Contact-hours gating | A regulatory time window is arithmetic, not judgment |
+| Monetary amounts | Always read from the database. A hallucinated figure in a payment message is unrecoverable |
+| Retry scheduling | Fixed cadence aligned to Razorpay's own retry windows |
+| Metrics | Numbers an evaluator will check must be computed, not narrated |
+| Classification (common path) | Razorpay's error fields are already a structured taxonomy — a lookup beats a model on speed, cost, and accuracy |
+
+The LLM handles message composition, genuinely ambiguous classification, and free-text customer replies. It is never load-bearing for correctness: every LLM path has a deterministic fallback, so a Gemini outage degrades message quality without stopping recovery. And it cannot move money or override a stop — those are code paths it has no ability to reach.
+
+Full reasoning in [`docs/PROJECT_DOCUMENTATION.md`](docs/PROJECT_DOCUMENTATION.md#85-where-we-deliberately-did-not-use-ai).
 
 ---
 
@@ -174,8 +211,9 @@ Every task in [`docs/TASKS.md`](docs/TASKS.md) has a matching [GitHub Issue](htt
 
 ## Documentation
 
-- [`docs/PRD.md`](docs/PRD.md) — product requirements, success criteria, milestones
-- [`docs/PROJECT_DOCUMENTATION.md`](docs/PROJECT_DOCUMENTATION.md) — architecture, schema, compliance, LLM prompts
+- [`docs/PRD.md`](docs/PRD.md) — product requirements, success criteria, judging-criteria map, milestones
+- [`docs/PROJECT_DOCUMENTATION.md`](docs/PROJECT_DOCUMENTATION.md) — architecture, schema, compliance, LLM prompts, evaluation design
+- [`docs/ENGINEERING_LOG.md`](docs/ENGINEERING_LOG.md) — what broke, and how we got out
 - [`docs/TASKS.md`](docs/TASKS.md) — full task breakdown, mirrored as GitHub Issues
 
 ## License
