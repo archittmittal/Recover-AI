@@ -12,6 +12,7 @@ import { writeAuditLog } from '../utils/audit';
 import { classifyFailureWithLLM } from '../ai/classifier';
 import { generateRecoveryMessage } from '../ai/messenger';
 import { razorpayClient } from '../razorpay/client';
+import { RecoveryStrategy } from './classifier';
 import { getChannelForAttempt, STRATEGY_CONFIGS } from './strategies';
 import { evaluateStoppingRules } from './stopping-rules';
 import { calculateNextScheduledTime } from './scheduler';
@@ -178,7 +179,10 @@ export class RecoveryCoordinator {
 
     // Advance attempt counter & determine channel
     const nextAttempt = journey.currentAttempt + 1;
-    const channel = getChannelForAttempt(journey.strategy as any, nextAttempt);
+    const strategy = (
+      journey.strategy in STRATEGY_CONFIGS ? journey.strategy : 'payment_link'
+    ) as RecoveryStrategy;
+    const channel = getChannelForAttempt(strategy, nextAttempt);
 
     // Generate Razorpay Payment Link
     let paymentUrl = `https://rzp.io/i/recov_${journey.id}`;
@@ -203,7 +207,7 @@ export class RecoveryCoordinator {
     }
 
     // Generate personalized message via LLM
-    const strategyConfig = STRATEGY_CONFIGS[journey.strategy as any] || STRATEGY_CONFIGS.payment_link;
+    const strategyConfig = STRATEGY_CONFIGS[strategy] || STRATEGY_CONFIGS.payment_link;
     const discount = nextAttempt > 1 && strategyConfig.allowDiscount ? 10 : 0;
 
     const messageResult = await generateRecoveryMessage({
