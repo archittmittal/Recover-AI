@@ -8,7 +8,7 @@ import {
   recoveryActions,
   auditLogs,
 } from '../src/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, asc } from 'drizzle-orm';
 import { recoveryCoordinator } from '../src/lib/recovery/coordinator';
 import { runCheckoutAbandonmentSweep } from '../src/lib/recovery/abandonment-sweep';
 import { setClock, FixedClock } from '../src/lib/utils/time';
@@ -52,11 +52,13 @@ describe('RecoverAI End-to-End Autonomous Workflow Smoke Suite', () => {
       .where(eq(recoveryJourneys.id, journeyId));
     expect(journeys[0].currentAttempt).toBe(2);
 
-    // Verify 2 distinct actions recorded
+    // Verify 2 distinct actions recorded with deterministic ordering
     const actions = await db
       .select()
       .from(recoveryActions)
-      .where(eq(recoveryActions.journeyId, journeyId));
+      .where(eq(recoveryActions.journeyId, journeyId))
+      .orderBy(asc(recoveryActions.attemptNumber));
+
     expect(actions.length).toBe(2);
     expect(actions[0].attemptNumber).toBe(1);
     expect(actions[1].attemptNumber).toBe(2);
@@ -111,11 +113,17 @@ describe('RecoverAI End-to-End Autonomous Workflow Smoke Suite', () => {
     expect(updatedCustomer[0].dndStatus).toBe('opted_out');
   });
 
-  it('5. Executes checkout abandonment sweep without duplicates', async () => {
-    const sweepResult = await runCheckoutAbandonmentSweep();
-    expect(sweepResult).toBeDefined();
-    expect(typeof sweepResult.sweptCount).toBe('number');
-    expect(typeof sweepResult.initiatedCount).toBe('number');
+  it('5. Executes checkout abandonment sweep without duplicates (Idempotent)', async () => {
+    // First sweep run initiates eligible abandonments
+    const firstSweep = await runCheckoutAbandonmentSweep(0); // 0 threshold for smoke test evaluation
+    expect(firstSweep).toBeDefined();
+    expect(typeof firstSweep.sweptCount).toBe('number');
+    expect(typeof firstSweep.initiatedCount).toBe('number');
+
+    // Second sweep run must be idempotent and initiate 0 new journeys
+    const secondSweep = await runCheckoutAbandonmentSweep(0);
+    expect(secondSweep.initiatedCount).toBe(0);
+    expect(secondSweep.journeyIds.length).toBe(0);
   });
 
   it('6. Enforces immutable audit logging across all state machine transitions', async () => {

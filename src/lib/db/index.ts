@@ -115,6 +115,7 @@ function getOrCreateDb(): BetterSQLite3Database<typeof schema> {
 
   const sqlite = globalForDb.sqlite ?? new Database(dbPath);
   sqlite.pragma('journal_mode = WAL');
+  sqlite.pragma('foreign_keys = ON');
 
   // Initialize tables idempotently
   initializeTables(sqlite);

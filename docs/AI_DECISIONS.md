@@ -52,11 +52,11 @@ graph TD
 
 | System Domain | Why AI Was Excluded | Deterministic Enforcement |
 | :--- | :--- | :--- |
-| **RBI Contact Hours (8 AM - 7 PM IST)** | A hallucinated timestamp or time-zone miscalculation would violate regulatory harassment rules. | Hard mathematical evaluation on `Clock.now()` in `Asia/Kolkata` time zone ([`src/lib/utils/time.ts`](../recover-ai/src/lib/utils/time.ts)). |
-| **All 5 Stopping Rules** | Opt-out ("STOP"), payment success, DND, and 3-attempt exhaustion must halt instantly without LLM latency or ambiguity. | Hardcoded safety engine ([`src/lib/recovery/stopping-rules.ts`](../recover-ai/src/lib/recovery/stopping-rules.ts)). |
+| **RBI Contact Hours (8 AM - 7 PM IST)** | A hallucinated timestamp or time-zone miscalculation would violate regulatory harassment rules. | Hard mathematical evaluation on `Clock.now()` in `Asia/Kolkata` time zone ([`src/lib/utils/time.ts`](../src/lib/utils/time.ts)). |
+| **All 5 Stopping Rules** | Opt-out ("STOP"), payment success, DND, and 3-attempt exhaustion must halt instantly without LLM latency or ambiguity. | Hardcoded safety engine ([`src/lib/recovery/stopping-rules.ts`](../src/lib/recovery/stopping-rules.ts)). |
 | **Financial Calculations (Paise Arithmetic)** | LLMs suffer from token-arithmetic hallucinations (e.g., `499900` paise = ₹4,999.00). | Integer arithmetic in TypeScript and Drizzle ORM queries; amounts never computed by prompts. |
-| **State Machine Transitions** | Allowing an LLM to freely set database states could cause illegal transitions (e.g., `exhausted` -> `resolved`). | Strictly validated state transition machine ([`src/lib/recovery/coordinator.ts`](../recover-ai/src/lib/recovery/coordinator.ts)). |
-| **HMAC Webhook Verification** | Cryptographic verification must be byte-level timing-safe. | `crypto.timingSafeEqual` over raw SHA-256 digests ([`src/lib/razorpay/webhooks.ts`](../recover-ai/src/lib/razorpay/webhooks.ts)). |
+| **State Machine Transitions** | Allowing an LLM to freely set database states could cause illegal transitions (e.g., `exhausted` -> `resolved`). | Strictly validated state transition machine ([`src/lib/recovery/coordinator.ts`](../src/lib/recovery/coordinator.ts)). |
+| **HMAC Webhook Verification** | Cryptographic verification must be byte-level timing-safe. | `crypto.timingSafeEqual` over raw SHA-256 digests ([`src/lib/razorpay/webhooks.ts`](../src/lib/razorpay/webhooks.ts)). |
 | **Infrastructure Error Retries** | Gateway, network, and bank downtime is transient; contacting the customer is counterproductive. | Deterministic taxonomy mapping routes to `smart_retry` with exponential backoff. |
 
 ---
@@ -73,6 +73,6 @@ graph LR
     Fallback --> Out["Sanitized Outreach with Mandatory STOP Notice"]
 ```
 
-1. **Classification Fallback**: Falls back to [`classifyFailureDeterministic`](../recover-ai/src/lib/recovery/classifier.ts) with zero degradation for standard error sources.
+1. **Classification Fallback**: Falls back to [`classifyFailureDeterministic`](../src/lib/recovery/classifier.ts) with zero degradation for standard error sources.
 2. **Copywriting Fallback**: Falls back to pre-compiled, linguistically verified templates in English, Hindi, and Hinglish.
 3. **Conversational Fallback**: Preserves hardcoded regex matchers for `STOP`, `unsubscribe`, and `band karo` to guarantee stopping rules never fail.
