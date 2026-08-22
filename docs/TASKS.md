@@ -32,20 +32,20 @@
 
 | # | Task | Status | Owner | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| 2.1 | Razorpay webhook signature verification | ⬜ | — | `src/lib/razorpay/webhooks.ts` — HMAC-SHA256 validation |
-| 2.2 | Webhook ingestion API route | ⬜ | — | `POST /api/webhooks/razorpay` — parse event type, idempotent dedup |
-| 2.3 | Razorpay API client (test mode) | ⬜ | — | `src/lib/razorpay/client.ts` — Basic auth, payment link creation |
-| 2.4 | Razorpay TypeScript types | ⬜ | — | `src/lib/razorpay/types.ts` — webhook payloads, payment link request/response |
-| 2.5 | Failure classifier (deterministic rules) | ⬜ | — | `src/lib/recovery/classifier.ts` — map error_source/reason → strategy |
-| 2.6 | Gemini client initialization | ⬜ | — | `src/lib/ai/gemini.ts` — singleton client with API key |
-| 2.7 | LLM failure classifier (ambiguous cases) | ⬜ | — | `src/lib/ai/classifier.ts` — structured JSON output |
-| 2.8 | LLM message generator | ⬜ | — | `src/lib/ai/messenger.ts` — personalized recovery messages |
-| 2.9 | System prompts file | ⬜ | — | `src/lib/ai/prompts.ts` — all prompts with template variables |
-| 2.10 | Strategy selection engine | ⬜ | — | `src/lib/recovery/strategies.ts` — 4 strategy buckets |
-| 2.11 | Recovery Coordinator (state machine) | ⬜ | — | `src/lib/recovery/coordinator.ts` — orchestrates full journey lifecycle |
-| 2.12 | Retry scheduler with contact-hours gating | ⬜ | — | `src/lib/recovery/scheduler.ts` — defer outside 8AM–7PM IST |
-| 2.13 | Stopping rule enforcement | ⬜ | — | Inside coordinator: payment success, STOP, exhaustion, DND, hours |
-| 2.14 | Recovery trigger API route | ⬜ | — | `POST /api/recovery/trigger` — process all pending failures |
+| 2.1 | Razorpay webhook signature verification | ✅ | Agent | `src/lib/razorpay/webhooks.ts` — HMAC-SHA256 timing-safe validation |
+| 2.2 | Webhook ingestion API route | ✅ | Agent | `POST /api/webhooks/razorpay` — parse event type, idempotent dedup |
+| 2.3 | Razorpay API client (test mode) | ✅ | Agent | `src/lib/razorpay/client.ts` — Basic auth, payment link creation |
+| 2.4 | Razorpay TypeScript types | ✅ | Agent | `src/lib/razorpay/types.ts` — webhook payloads, payment link request/response |
+| 2.5 | Failure classifier (deterministic rules) | ✅ | Agent | `src/lib/recovery/classifier.ts` — map error_source/reason → strategy |
+| 2.6 | Gemini client initialization | ✅ | Agent | `src/lib/ai/gemini.ts` — singleton client with API key |
+| 2.7 | LLM failure classifier (ambiguous cases) | ✅ | Agent | `src/lib/ai/classifier.ts` — structured JSON output |
+| 2.8 | LLM message generator | ✅ | Agent | `src/lib/ai/messenger.ts` — personalized recovery messages |
+| 2.9 | System prompts file | ✅ | Agent | `src/lib/ai/prompts.ts` — all prompts with template variables |
+| 2.10 | Strategy selection engine | ✅ | Agent | `src/lib/recovery/strategies.ts` — 4 strategy buckets |
+| 2.11 | Recovery Coordinator (state machine) | ✅ | Agent | `src/lib/recovery/coordinator.ts` — orchestrates full journey lifecycle |
+| 2.12 | Retry scheduler with contact-hours gating | ✅ | Agent | `src/lib/recovery/scheduler.ts` — defer outside 8AM–7PM IST |
+| 2.13 | Stopping rule enforcement | ✅ | Agent | Inside coordinator: payment success, STOP, exhaustion, DND, hours |
+| 2.14 | Recovery trigger API route | ✅ | Agent | `POST /api/recovery/trigger` — process all pending failures |
 
 ---
 
