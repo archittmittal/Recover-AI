@@ -23,8 +23,16 @@ export async function processCustomerConversation(
 ): Promise<ConversationResponse> {
   const text = input.customerMessage.trim().toLowerCase();
 
-  // 1. Fast deterministic check for hard opt-outs
-  if (text === 'stop' || text.includes('stop') || text.includes('unsubscribe') || text.includes('band karo')) {
+  // 1. Fast deterministic check for hard opt-outs across English and Hindi/Hinglish
+  if (
+    text === 'stop' ||
+    text.includes('stop') ||
+    text.includes('unsubscribe') ||
+    text.includes('band karo') ||
+    text.includes('mat bhejo') ||
+    text.includes('mat karo') ||
+    text.includes('cancel')
+  ) {
     return {
       responseMessage: `You have been unsubscribed. No further messages will be sent. Thank you.`,
       intent: 'opt_out',

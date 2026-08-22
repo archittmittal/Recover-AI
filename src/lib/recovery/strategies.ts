@@ -51,8 +51,8 @@ export const STRATEGY_CONFIGS: Record<RecoveryStrategy, StrategyConfig> = {
   },
   merchant_alert: {
     strategy: 'merchant_alert',
-    channelSequence: [],
-    maxAttempts: 0,
+    channelSequence: ['email'],
+    maxAttempts: 1,
     initialChannel: 'email',
     allowDiscount: false,
     maxDiscountPercentage: 0,
@@ -69,7 +69,7 @@ export function getChannelForAttempt(
 ): RecoveryChannel {
   const config = STRATEGY_CONFIGS[strategy];
   if (!config || config.channelSequence.length === 0) {
-    return 'whatsapp';
+    return config?.initialChannel || 'whatsapp';
   }
 
   const index = Math.min(Math.max(attemptNumber - 1, 0), config.channelSequence.length - 1);
