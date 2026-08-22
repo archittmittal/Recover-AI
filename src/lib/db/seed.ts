@@ -2,7 +2,7 @@ import { db } from './index';
 import { customers, paymentFailures, recoveryJourneys, recoveryActions, auditLogs, webhookEvents } from './schema';
 import { getClock, formatIST } from '../utils/time';
 import { SeededRNG } from '../simulation/rng';
-import { sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 
 const INDIAN_NAMES = [
   'Aarav Sharma', 'Aditya Patel', 'Amit Verma', 'Arjun Singh', 'Ananya Iyer',
@@ -230,7 +230,7 @@ export async function seedDatabase(): Promise<number> {
     const count = generatedFailures.filter(f => f.customerId === custId).length;
     await db.update(customers)
       .set({ totalFailures: count })
-      .where(sql`id = ${custId}`);
+      .where(eq(customers.id, custId));
   }
 
   return generatedFailures.length;

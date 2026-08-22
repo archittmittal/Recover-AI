@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { journeyId, customerId, amount } = body;
+    const { journeyId, customerId } = body;
 
     if (!journeyId && !customerId) {
       return NextResponse.json(
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     }
 
     const payId = `pay_sim_${generateId('cust')}`;
-    const amountToRecover = amount || journey.amountAtRisk;
+    const amountToRecover = journey.amountAtRisk;
 
     await recoveryCoordinator.resolveJourneyWithPayment(journey.id, payId, amountToRecover);
 
