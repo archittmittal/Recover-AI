@@ -27,7 +27,7 @@ export async function sendWhatsAppMessage(
 
   return {
     channel: 'whatsapp',
-    messageId: `wa_msg_${Date.now()}`,
+    messageId: `wa_msg_${Date.now()}_${payload.toPhone.slice(-4)}`,
     deliveryStatus: 'read',
     deliveredAt: deliveredTime.toISOString(),
     readAt: readTime.toISOString(),

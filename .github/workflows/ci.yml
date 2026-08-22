@@ -33,6 +33,9 @@ jobs:
       - name: Linting Check
         run: npm run lint
 
+      - name: Unit Tests (Stopping Rules, Contact Hours, Classifier, Idempotency)
+        run: npm test
+
   build:
     name: Next.js Production Build
     runs-on: ubuntu-latest
