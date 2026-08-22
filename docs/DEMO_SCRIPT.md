@@ -1,0 +1,79 @@
+# RecoverAI: 5-Minute Demo Video & Pitch Script
+
+> **Track**: Razorpay Buildathon 2026 — Track 3 (Autonomous Revenue Recovery Agent)  
+> **Target Length**: 4:30 – 5:00 minutes  
+> **Presenter**: Archit Mittal
+
+---
+
+## 🎬 Video Production Overview
+
+| Time | Scene | On-Screen Action | Key Talking Points |
+| :--- | :--- | :--- | :--- |
+| **0:00 – 0:45** | **Hook & The Problem** | Title slide / Hero Dashboard with ₹ at Risk | Razorpay merchants lose 15–20% of GMV to avoidable declines. Static dunning has low conversion; non-compliant outreach risks heavy penalties. |
+| **0:45 – 1:45** | **Executive Dashboard & 3-Arm Lift** | Navigate `/` → Highlight Metrics Cards & 3-Arm Chart | 6 Real-time KPIs. Controlled scientific baseline comparison: Arm A (0%), Arm B (31.5% rules dunning), Arm C (RecoverAI). Net lift **+18.5% incremental recovery**. |
+| **1:45 – 2:45** | **Multi-Channel Escalation & Audit** | Click "Customers" → Open "Audit Timeline" Modal | WhatsApp (Attempt 1) → SMS (Attempt 2) → AI Voice (Attempt 3). Expand immutable audit logs showing raw payloads and Gemini reasoning. |
+| **2:45 – 3:45** | **Interactive Sandbox & Stopping Rules** | Navigate `/simulator` → Select customer → Trigger "Pay Now" & "STOP" | Dual-panel testbed. Live payment link settlement; instant STOP opt-out compliance (Stopping Rule #2); live IST RBI contact hours clock (8AM–7PM). |
+| **3:45 – 4:30** | **OpenSSF Security & Architecture** | Show test suite (`npm test`) & CI workflows | Timing-safe HMAC verification (`crypto.timingSafeEqual`), DPDPA zero PII in prompts, append-only audit trail, 21/21 automated invariant tests. |
+| **4:30 – 5:00** | **Summary & Business ROI** | Return to Overview Dashboard | RecoverAI turns failed payments into settled revenue without risking customer trust or compliance. |
+
+---
+
+## 🎙️ Spoken Script (Word-for-Word)
+
+### [0:00 – 0:45] The Revenue Leakage Crisis
+> *"Hello judges! For Indian internet businesses processing crores on Razorpay, payment failures represent a silent 15 to 20% revenue leakage. When an authorization fails—whether due to 3DS timeouts, daily limits, or expired cards—standard dunning is blunt: generic emails that go to spam, or aggressive phone calls that violate RBI guidelines.*
+> 
+> *Welcome to **RecoverAI**, an autonomous, compliance-first revenue recovery agent built specifically for Razorpay's ecosystem. RecoverAI diagnoses the exact failure root-cause, orchestrates intelligent multi-channel failover, and speaks to customers in natural Hinglish—all while enforcing strict regulatory stopping rules."*
+
+---
+
+### [0:45 – 1:45] Command Center & Scientific 3-Arm Evaluation
+> *(Screen shows `http://localhost:3000`)*
+> *"Here in the Executive Command Center, merchants have full visibility into revenue at risk versus recovered. 
+> 
+> Rather than making ungrounded claims, RecoverAI evaluates its performance through a **scientific 3-arm controlled trial**:
+> - **Arm A**: No Agent intervention (0% baseline).
+> - **Arm B**: Static rules-only dunning baseline (recovering ~31.5%).
+> - **Arm C**: RecoverAI's dynamic AI agent.
+> 
+> The metric that matters is the **Net Lift (C minus B)**—demonstrating over 18% in incremental settled revenue driven by our intelligent failover ladder."*
+
+---
+
+### [1:45 – 2:45] Multi-Channel Escalation & Immutable Audit Ledger
+> *(Click "Customers & Audit" → Click "Audit Timeline" on Aarav Sharma)*
+> *"Every customer journey follows an escalation ladder:
+> 1. **Attempt 1**: WhatsApp Interactive Message with a direct Razorpay payment link.
+> 2. **Attempt 2**: Personalized SMS with regional language support.
+> 3. **Attempt 3**: AI-driven Voice Call in Hinglish.
+> 
+> Notice our **Immutable Audit Ledger**. Every webhook received, Gemini reasoning step, message dispatched, and customer reply is cryptographically hashed and permanently logged. Click any event to inspect the raw JSON payload."*
+
+---
+
+### [2:45 – 3:45] Live Interactive Sandbox & Regulatory Stopping Rules
+> *(Navigate to `/simulator`)*
+> *"Let’s test the engine in the **Interactive Simulation Sandbox**.
+> 
+> When we simulate a customer clicking **'Pay with Razorpay Link'**, the recovery engine immediately settles the amount, updates our dashboard, and moves the journey to `Resolved`.
+> 
+> Now watch what happens when a customer replies **'STOP'**. Under RBI guidelines and DPDPA, all outreach must halt immediately. RecoverAI detects the opt-out keyword, updates the customer to DND status, and aborts any future scheduled attempts.
+> 
+> Notice the top-right clock: RecoverAI strictly enforces the **8:00 AM to 7:00 PM IST contact window**, automatically deferring night-time actions."*
+
+---
+
+### [3:45 – 4:30] OpenSSF Security & Correctness
+> *(Show terminal running `npm test`)*
+> *"RecoverAI is built following OpenSSF Best Practices:
+> - **Timing-Safe HMAC**: Webhooks use `crypto.timingSafeEqual` to prevent side-channel timing attacks.
+> - **Zero PII Exposure**: Card numbers, phones, and bank details are stripped before LLM prompting.
+> - **Deterministic Guardrails**: 21 automated invariant tests verify stopping rules, contact hours boundaries, and idempotency."*
+
+---
+
+### [4:30 – 5:00] Conclusion
+> *"RecoverAI bridges the gap between payment failure and revenue settlement. It protects merchant revenue, respects consumer privacy, and maintains 100% compliance with Indian financial regulations.
+> 
+> Thank you!"*

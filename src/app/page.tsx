@@ -7,6 +7,7 @@ import { RecoveryChart } from '@/components/dashboard/RecoveryChart';
 import { ChannelComparison } from '@/components/dashboard/ChannelComparison';
 import { FailureBreakdown } from '@/components/dashboard/FailureBreakdown';
 import { CustomerTable } from '@/components/customers/CustomerTable';
+import { DashboardSkeleton } from '@/components/dashboard/DashboardSkeleton';
 import { Button } from '@/components/ui/button';
 import {
   Sparkles,
@@ -65,8 +66,10 @@ export default function DashboardPage() {
           fetch('/api/metrics'),
           fetch('/api/customers'),
         ]);
+
         const metricsJson = await metricsRes.json();
         const customersJson = await customersRes.json();
+
         if (!isMounted) return;
 
         if (metricsJson.success && metricsJson.data) {
@@ -81,7 +84,7 @@ export default function DashboardPage() {
           setCustomersList(customersJson.data.items || []);
         }
       } catch (err) {
-        console.error('Initial load error:', err);
+        console.error('Initial dashboard fetch error:', err);
       } finally {
         if (isMounted) {
           setIsLoading(false);
@@ -114,27 +117,42 @@ export default function DashboardPage() {
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-zinc-50/50 dark:bg-zinc-950 flex flex-col">
-        <Navbar />
-        <main className="flex-1 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3 text-zinc-500">
-            <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-            <span className="text-sm font-medium">Loading RecoverAI Executive Dashboard...</span>
-          </div>
-        </main>
-      </div>
-    );
-  }
+  return (
+    <div className="min-h-screen bg-zinc-50/60 dark:bg-zinc-950 flex flex-col">
+      <Navbar />
 
-  // Empty state: No records in DB
-  if (!summary || summary.totalFailures === 0) {
-    return (
-      <div className="min-h-screen bg-zinc-50/50 dark:bg-zinc-950 flex flex-col">
-        <Navbar />
-        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-16 flex items-center justify-center">
-          <div className="max-w-md w-full text-center space-y-5 p-8 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        {/* Top Header Bar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-zinc-200/80 dark:border-zinc-800">
+          <div>
+            <h1 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+              Executive Revenue Recovery Command Center
+            </h1>
+            <p className="text-xs text-zinc-500 mt-0.5">
+              Live Razorpay autonomous dunning, multi-channel failover, and RBI contact-hours
+              compliance monitoring.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={isRefreshing || isLoading}
+              className="text-xs font-medium border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+              Refresh Analytics
+            </Button>
+          </div>
+        </div>
+
+        {isLoading ? (
+          <DashboardSkeleton />
+        ) : !summary || summary.totalFailures === 0 ? (
+          /* Empty state: No records in DB */
+          <div className="max-w-md mx-auto my-12 text-center space-y-5 p-8 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xs">
             <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 mx-auto flex items-center justify-center">
               <Sparkles className="w-6 h-6" />
             </div>
@@ -166,58 +184,28 @@ export default function DashboardPage() {
               )}
             </Button>
           </div>
-        </main>
-      </div>
-    );
-  }
+        ) : (
+          <>
+            {/* 1. KPI Summary Cards */}
+            {baseline && <MetricsCards summary={summary} baseline={baseline} />}
 
-  return (
-    <div className="min-h-screen bg-zinc-50/60 dark:bg-zinc-950 flex flex-col">
-      <Navbar />
+            {/* 2. Main Recovery Breakdown & 3-Arm Baseline Comparison */}
+            {baseline && (
+              <RecoveryChart failureMetrics={failureMetrics} baseline={baseline} />
+            )}
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {/* Top Header Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-zinc-200/80 dark:border-zinc-800">
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-              Autonomous Revenue Recovery Command Center
-            </h1>
-            <p className="text-xs text-zinc-500 mt-0.5">
-              Measured revenue recovered across 50+ synthetic transactions with compliant
-              multi-channel escalation and stopping rules.
-            </p>
-          </div>
+            {/* 3. Multi-Channel Escalation Matrix & Strategy Distribution */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <ChannelComparison channelMetrics={channelMetrics} />
+              <FailureBreakdown strategyMetrics={strategyMetrics} />
+            </div>
 
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-              className="text-xs font-medium border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
-          </div>
-        </div>
-
-        {/* 1. Metrics Cards (KPIs) */}
-        {summary && baseline && <MetricsCards summary={summary} baseline={baseline} />}
-
-        {/* 2. Recovery Chart & 3-Arm Baseline Comparison */}
-        {baseline && (
-          <RecoveryChart failureMetrics={failureMetrics} baseline={baseline} />
+            {/* 4. Active Customer Ledger & Exception Management */}
+            <div className="pt-2">
+              <CustomerTable customers={customersList} />
+            </div>
+          </>
         )}
-
-        {/* 3. Multi-Channel Escalation Ladder & Strategy Breakdown */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <ChannelComparison channelMetrics={channelMetrics} />
-          <FailureBreakdown strategyMetrics={strategyMetrics} />
-        </div>
-
-        {/* 4. Customer Recovery Table & Audit Logs */}
-        <CustomerTable customers={customersList} />
       </main>
     </div>
   );

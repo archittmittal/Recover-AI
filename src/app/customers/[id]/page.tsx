@@ -9,13 +9,13 @@ import { AuditTimeline, AuditLogEntry } from '@/components/customers/AuditTimeli
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   ArrowLeft,
   User,
   CreditCard,
   ShieldCheck,
   Terminal,
-  Loader2,
 } from 'lucide-react';
 
 interface CustomerProfile {
@@ -99,11 +99,44 @@ export default function CustomerDetailPage() {
     return (
       <div className="min-h-screen bg-zinc-50/60 dark:bg-zinc-950 flex flex-col">
         <Navbar />
-        <main className="flex-1 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3 text-zinc-500">
-            <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-            <span className="text-sm font-medium">Loading customer journey details...</span>
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 animate-pulse">
+          <div className="flex justify-between items-center pb-2 border-b border-zinc-200 dark:border-zinc-800">
+            <div className="space-y-1.5">
+              <Skeleton className="h-6 w-48" />
+              <Skeleton className="h-3 w-32" />
+            </div>
+            <Skeleton className="h-8 w-36 rounded-md" />
           </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Card className="border-zinc-200 dark:border-zinc-800 p-4 space-y-3">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-full" />
+            </Card>
+            <Card className="border-zinc-200 dark:border-zinc-800 p-4 space-y-3">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-full" />
+            </Card>
+            <Card className="border-zinc-200 dark:border-zinc-800 p-4 space-y-3">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-full" />
+            </Card>
+          </div>
+
+          <Card className="border-zinc-200 dark:border-zinc-800 p-5 space-y-4">
+            <Skeleton className="h-5 w-48" />
+            <div className="space-y-4 pt-2">
+              <Skeleton className="h-16 w-full rounded-lg" />
+              <Skeleton className="h-16 w-full rounded-lg" />
+              <Skeleton className="h-16 w-full rounded-lg" />
+            </div>
+          </Card>
         </main>
       </div>
     );
