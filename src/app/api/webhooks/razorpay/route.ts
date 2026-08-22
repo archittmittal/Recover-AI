@@ -27,8 +27,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const payload: RazorpayWebhookPayload = JSON.parse(rawBody);
-    const eventId = (payload as any).id || `evt_${generateId('audit')}`;
+    const payload = JSON.parse(rawBody) as RazorpayWebhookPayload & { id?: string };
+    const eventId = payload.id || `evt_${generateId('audit')}`;
     const payloadHash = computePayloadHash(rawBody);
     const nowStr = formatIST(getClock().now());
 
@@ -97,11 +97,11 @@ export async function POST(req: NextRequest) {
         razorpayInvoiceId: payment.invoice_id || null,
         amount: payment.amount,
         currency: payment.currency || 'INR',
-        paymentMethod: payment.method as any,
+        paymentMethod: payment.method || 'card',
         failureType: payment.subscription_id ? 'subscription' : 'one_time',
-        errorCode: (payment.error_code as any) || 'BAD_REQUEST_ERROR',
-        errorSource: (payment.error_source as any) || 'customer',
-        errorStep: (payment.error_step as any) || 'authorization',
+        errorCode: payment.error_code || 'BAD_REQUEST_ERROR',
+        errorSource: payment.error_source || 'customer',
+        errorStep: payment.error_step || 'authorization',
         errorReason: payment.error_reason || 'payment_failed',
         errorDescription: payment.error_description || 'Payment failure recorded via webhook.',
         createdAt: nowStr,
