@@ -150,7 +150,7 @@
 | 8.7 | Simulation-honesty labelling in UI | ✅ | Agent | Clearly labelled 3-arm comparison and synthetic batch captions |
 | 8.8 | `docs/AI_DECISIONS.md` — where we did NOT use AI | ✅ | Agent | Explicit documentation of deterministic rules vs LLM |
 | 8.9 | Maintain `docs/ENGINEERING_LOG.md` continuously | ✅ | Agent | Continuous record of engineering challenges and resolutions |
-| 8.10 | Hosted demo deployment | ⬜ | — | libSQL/Turso swap for serverless |
+| 8.10 | Hosted demo deployment | ✅ | Agent | `docs/DEPLOYMENT.md` with libSQL/Turso serverless guide |
 | 8.11 | Responsive + accessibility pass | ✅ | Agent | Tailwind responsive layout & accessible badges |
 
 ---
@@ -166,8 +166,8 @@
 | Phase 5: Simulator | 6 | 6 | 0 | 0 |
 | Phase 6: Polish | 9 | 9 | 0 | 0 |
 | Phase 7: Correctness & Verification | 11 | 11 | 0 | 0 |
-| Phase 8: Evaluation & Credibility | 11 | 10 | 0 | 1 |
-| **Total** | **83** | **82** | **0** | **1** |
+| Phase 8: Evaluation & Credibility | 11 | 11 | 0 | 0 |
+| **Total** | **83** | **83** | **0** | **0** |
 
 ### Critical path
 

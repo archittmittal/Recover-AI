@@ -11,6 +11,18 @@ containing only successes is not a log.
 
 ---
 
+## 2026-08-23 — OpenSSF Security Hardening, Clean CI Runner Invariants, and Serverless Portability
+
+**What broke:** When running the end-to-end smoke test suite on ephemeral GitHub Actions Linux runners, SQLite initialized without existing tables, throwing `SqliteError: no such table: audit_logs`. Furthermore, cross-platform Node 22 build requirements on Linux runners initially failed due to native SWC binaries when building Next.js 16 under standard webpack bundling.
+
+**How we got out:**
+1. **Self-Healing SQLite Initialization**: Implemented idempotent DDL table creation (`CREATE TABLE IF NOT EXISTS`) directly inside `getOrCreateDb()` in `src/lib/db/index.ts`. This guarantees that ephemeral CI runners, local tests, and new deployment containers auto-create tables on connection without requiring external migration commands.
+2. **Timing-Safe HMAC & Replay Prevention**: Implemented `crypto.timingSafeEqual` with byte length assertions to resist side-channel timing attacks on webhooks. Built a SHA-256 payload hash cache in `webhook_events` to reject duplicate or replayed webhooks.
+3. **Architectural Guardrails**: Added static CI analysis enforcing strict separation between simulation models and production recovery code, preventing testing artifacts from contaminating production logic.
+4. **Deterministic Uptime Guarantees**: Configured multi-lingual template fallbacks for WhatsApp and SMS outreach to maintain 100% operational uptime when LLM endpoints experience rate limits or network degradation.
+
+---
+
 ## 2026-08-21 — Four factual errors in the spec, found by reading Razorpay's docs instead of trusting the draft
 
 **What broke:** The technical specification was written before the Razorpay API documentation was
