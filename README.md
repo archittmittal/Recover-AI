@@ -8,7 +8,7 @@
 
 [Documentation](docs/PROJECT_DOCUMENTATION.md) · [Product Spec](docs/PRD.md) · [Task Board](https://github.com/archittmittal/Recover-AI/issues)
 
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/archittmittal/Recover-AI/badge)](https://scorecard.dev/viewer/?repo=github.com/archittmittal/Recover-AI)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/archittmittal/Recover-AI/badge)](https://scorecard.dev/viewer/?uri=github.com/archittmittal/Recover-AI)
 [![CI Pipeline](https://github.com/archittmittal/Recover-AI/actions/workflows/ci.yml/badge.svg)](https://github.com/archittmittal/Recover-AI/actions/workflows/ci.yml)
 
 </div>
