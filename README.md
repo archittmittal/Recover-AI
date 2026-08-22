@@ -8,8 +8,9 @@
 
 [Documentation](docs/PROJECT_DOCUMENTATION.md) · [Product Spec](docs/PRD.md) · [Task Board](https://github.com/archittmittal/Recover-AI/issues)
 
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/archittmittal/Recover-AI/badge)](https://scorecard.dev/viewer/?uri=github.com/archittmittal/Recover-AI)
-[![CI Pipeline](https://github.com/archittmittal/Recover-AI/actions/workflows/ci.yml/badge.svg)](https://github.com/archittmittal/Recover-AI/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://img.shields.io/github/actions/workflow/status/archittmittal/Recover-AI/scorecard.yml?label=OpenSSF%20Scorecard&logo=openssf)](https://github.com/archittmittal/Recover-AI/actions/workflows/scorecard.yml)
+[![CI Pipeline](https://img.shields.io/github/actions/workflow/status/archittmittal/Recover-AI/ci.yml?label=CI%20Pipeline&logo=githubactions)](https://github.com/archittmittal/Recover-AI/actions/workflows/ci.yml)
+[![Security & Secret Scanning](https://img.shields.io/github/actions/workflow/status/archittmittal/Recover-AI/security.yml?label=Security%20Scanning&logo=gitguardrails)](https://github.com/archittmittal/Recover-AI/actions/workflows/security.yml)
 
 </div>
 
