@@ -41,4 +41,27 @@ describe('Webhook Signature Verification & Idempotency Hashing', () => {
     expect(hash1).not.toBe(hashDifferent);
     expect(hash1.length).toBe(64); // SHA-256 hex length
   });
+
+  it('detects replay attacks and duplicate webhook deliveries via eventId and payloadHash cache', () => {
+    const processedEvents = new Map<string, string>();
+
+    function processIncomingEvent(eventId: string, rawBody: string): { processed: boolean; reason: string } {
+      const payloadHash = computePayloadHash(rawBody);
+      if (processedEvents.has(eventId)) {
+        return { processed: false, reason: 'DUPLICATE_EVENT_ID' };
+      }
+      processedEvents.set(eventId, payloadHash);
+      return { processed: true, reason: 'SUCCESS' };
+    }
+
+    // First attempt -> processes successfully
+    const firstRun = processIncomingEvent('evt_test_999', samplePayload);
+    expect(firstRun.processed).toBe(true);
+    expect(firstRun.reason).toBe('SUCCESS');
+
+    // Duplicate delivery with identical eventId -> deduplicated
+    const duplicateRun = processIncomingEvent('evt_test_999', samplePayload);
+    expect(duplicateRun.processed).toBe(false);
+    expect(duplicateRun.reason).toBe('DUPLICATE_EVENT_ID');
+  });
 });

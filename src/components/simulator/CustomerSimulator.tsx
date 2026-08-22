@@ -64,6 +64,8 @@ export function CustomerSimulator({
   const [isPaying, setIsPaying] = useState(false);
   const [statusNotification, setStatusNotification] = useState<string | null>(null);
 
+  const isConversationClosed = journey?.status === 'resolved' || journey?.status === 'opted_out';
+
   // Handle Pay with Payment Link
   const handlePay = async () => {
     if (!journey || !customer) return;
@@ -77,7 +79,6 @@ export function CustomerSimulator({
         body: JSON.stringify({
           journeyId: journey.id,
           customerId: customer.id,
-          amount: journey.amountAtRisk,
         }),
       });
 
@@ -267,7 +268,7 @@ export function CustomerSimulator({
             variant="outline"
             size="sm"
             onClick={() => handleSendReply('STOP')}
-            disabled={isReplying || journey?.status === 'opted_out'}
+            disabled={isReplying || isConversationClosed}
             className="h-7 text-xs text-rose-700 border-rose-200 hover:bg-rose-50 dark:border-rose-900/40 dark:text-rose-300 font-medium"
           >
             <Ban className="w-3.5 h-3.5 mr-1" />
@@ -278,7 +279,7 @@ export function CustomerSimulator({
             variant="outline"
             size="sm"
             onClick={() => handleSendReply('I will pay tomorrow morning')}
-            disabled={isReplying}
+            disabled={isReplying || isConversationClosed}
             className="h-7 text-xs text-zinc-700 border-zinc-200 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-300"
           >
             <Clock className="w-3.5 h-3.5 mr-1 text-zinc-500" />
@@ -289,7 +290,7 @@ export function CustomerSimulator({
             variant="outline"
             size="sm"
             onClick={() => handleSendReply('Why did my payment fail?')}
-            disabled={isReplying}
+            disabled={isReplying || isConversationClosed}
             className="h-7 text-xs text-zinc-700 border-zinc-200 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-300"
           >
             <HelpCircle className="w-3.5 h-3.5 mr-1 text-zinc-500" />
@@ -309,7 +310,7 @@ export function CustomerSimulator({
             placeholder={`Reply to RecoverAI as ${customer.name.split(' ')[0]}...`}
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            disabled={isReplying || journey?.status === 'resolved' || journey?.status === 'opted_out'}
+            disabled={isReplying || isConversationClosed}
             className="text-xs h-9"
           />
           <Button

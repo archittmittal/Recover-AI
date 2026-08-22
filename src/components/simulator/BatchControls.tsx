@@ -64,7 +64,7 @@ export function BatchControls({ onActionComplete }: BatchControlsProps) {
     }
   };
 
-  const handleSimulateWebhook = async (scenario: 'one_time' | 'subscription' | 'abandonment') => {
+  const handleSimulateWebhook = async (scenario: 'one_time' | 'subscription') => {
     setIsSendingWebhook(true);
     setStatusMessage(`Simulating Razorpay webhook for ${scenario.replace(/_/g, ' ')}...`);
     try {

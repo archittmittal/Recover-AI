@@ -3,7 +3,7 @@
 import React from 'react';
 import { CustomerListItem } from '@/app/api/customers/route';
 import { JourneyStatusBadge } from '@/components/customers/JourneyStatusBadge';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, UserX } from 'lucide-react';
 
 interface CustomerSelectorProps {
   customers: CustomerListItem[];
@@ -16,6 +16,18 @@ export function CustomerSelector({
   selectedCustomerId,
   onSelectCustomer,
 }: CustomerSelectorProps) {
+  if (customers.length === 0) {
+    return (
+      <div className="py-8 px-4 text-center space-y-2 text-zinc-500">
+        <UserX className="w-6 h-6 mx-auto text-zinc-400" />
+        <div className="text-xs font-medium">No matching customers found</div>
+        <p className="text-[11px] text-zinc-400">
+          Try adjusting your search query or seed a new synthetic batch.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
       {customers.map((cust) => {
@@ -23,10 +35,11 @@ export function CustomerSelector({
         const atRiskRupees = (cust.amountAtRiskPaise / 100).toLocaleString('en-IN');
 
         return (
-          <div
+          <button
+            type="button"
             key={cust.id}
             onClick={() => onSelectCustomer(cust.id)}
-            className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+            className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
               isSelected
                 ? 'border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/40 shadow-xs ring-1 ring-indigo-600'
                 : 'border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 hover:bg-zinc-50 dark:hover:bg-zinc-800/60'
@@ -61,7 +74,7 @@ export function CustomerSelector({
                 }`}
               />
             </div>
-          </div>
+          </button>
         );
       })}
     </div>

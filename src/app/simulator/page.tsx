@@ -16,7 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Search, Loader2, RefreshCw } from 'lucide-react';
-import { CustomerListItem } from '../api/customers/route';
+import type { CustomerListItem } from '../api/customers/route';
 
 interface CustomerDetailResponse {
   customer: SimCustomer;
@@ -38,26 +38,6 @@ function SimulatorContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Load customer list
-  const loadCustomers = useCallback(async () => {
-    try {
-      const res = await fetch('/api/customers');
-      const json = await res.json();
-      if (json.success && json.data) {
-        const items = json.data.items || [];
-        setCustomers(items);
-        if (!selectedCustomerId && items.length > 0) {
-          setSelectedCustomerId(items[0].id);
-        }
-      }
-    } catch (err) {
-      console.error('Error loading customers for simulator:', err);
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
-    }
-  }, [selectedCustomerId]);
-
   // Load specific selected customer details & journey
   const loadCustomerDetails = useCallback(async (id: string) => {
     try {
@@ -71,39 +51,43 @@ function SimulatorContent() {
     }
   }, []);
 
-  useEffect(() => {
-    let isMounted = true;
-    (async () => {
+  // Load customer list
+  const loadCustomers = useCallback(
+    async (targetId?: string) => {
       try {
         const res = await fetch('/api/customers');
         const json = await res.json();
-        if (!isMounted) return;
         if (json.success && json.data) {
-          const items = json.data.items || [];
+          const items: CustomerListItem[] = json.data.items || [];
           setCustomers(items);
-          const targetId = initialCustomerId || (items.length > 0 ? items[0].id : null);
-          if (targetId) {
-            setSelectedCustomerId(targetId);
-            const detailRes = await fetch(`/api/customers/${targetId}`);
-            const detailJson = await detailRes.json();
-            if (isMounted && detailJson.success && detailJson.data) {
-              setSelectedCustomerData(detailJson.data);
-            }
+
+          const idToSelect = targetId || selectedCustomerId || (items.length > 0 ? items[0].id : null);
+          if (idToSelect) {
+            setSelectedCustomerId(idToSelect);
+            await loadCustomerDetails(idToSelect);
           }
         }
       } catch (err) {
-        console.error('Simulator init error:', err);
+        console.error('Error loading customers for simulator:', err);
       } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
+        setIsLoading(false);
+        setIsRefreshing(false);
       }
+    },
+    [selectedCustomerId, loadCustomerDetails]
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      if (!isMounted) return;
+      await loadCustomers(initialCustomerId || undefined);
     })();
 
     return () => {
       isMounted = false;
     };
-  }, [initialCustomerId]);
+  }, [initialCustomerId, loadCustomers]);
 
   const handleSelectCustomer = (id: string) => {
     setSelectedCustomerId(id);
@@ -113,10 +97,6 @@ function SimulatorContent() {
   const handleActionComplete = async () => {
     setIsRefreshing(true);
     await loadCustomers();
-    if (selectedCustomerId) {
-      await loadCustomerDetails(selectedCustomerId);
-    }
-    setIsRefreshing(false);
   };
 
   const filteredCustomers = customers.filter(
