@@ -3,9 +3,11 @@
 import React, { useEffect, useState } from 'react';
 import { Navbar } from '@/components/navigation/Navbar';
 import { CustomerTable } from '@/components/customers/CustomerTable';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Loader2 } from 'lucide-react';
-import { CustomerListItem } from '../api/customers/route';
+import { RefreshCw } from 'lucide-react';
+import type { CustomerListItem } from '../api/customers/route';
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<CustomerListItem[]>([]);
@@ -76,7 +78,7 @@ export default function CustomersPage() {
               variant="outline"
               size="sm"
               onClick={handleRefresh}
-              disabled={isRefreshing}
+              disabled={isRefreshing || isLoading}
               className="text-xs font-medium border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100"
             >
               <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isRefreshing ? 'animate-spin' : ''}`} />
@@ -86,10 +88,17 @@ export default function CustomersPage() {
         </div>
 
         {isLoading ? (
-          <div className="p-16 flex flex-col items-center justify-center gap-3 text-zinc-500">
-            <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-            <span className="text-sm font-medium">Loading customer records...</span>
-          </div>
+          <Card className="border-zinc-200 dark:border-zinc-800 p-5 space-y-4">
+            <div className="flex justify-between items-center">
+              <Skeleton className="h-6 w-56" />
+              <Skeleton className="h-8 w-64 rounded-md" />
+            </div>
+            <div className="space-y-3 pt-2">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full rounded-lg" />
+              ))}
+            </div>
+          </Card>
         ) : (
           <CustomerTable customers={customers} />
         )}
