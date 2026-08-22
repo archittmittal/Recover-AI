@@ -53,14 +53,14 @@
 
 | # | Task | Status | Owner | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| 3.1 | Communication manager | ⬜ | — | `src/lib/communication/manager.ts` — channel dispatch orchestration |
-| 3.2 | WhatsApp simulator | ⬜ | — | `src/lib/communication/whatsapp.ts` — simulate message delivery + read receipt |
-| 3.3 | SMS simulator | ⬜ | — | `src/lib/communication/sms.ts` — simulate DLT template delivery |
-| 3.4 | Voice call simulator | ⬜ | — | `src/lib/communication/voice.ts` — simulate Hinglish voice call |
-| 3.5 | Payment link creation integration | ⬜ | — | `src/lib/razorpay/payment-links.ts` — create links via Razorpay API |
-| 3.6 | Customer reply API route | ⬜ | — | `POST /api/simulator/reply` — customer sends text response |
-| 3.7 | Payment simulation API route | ⬜ | — | `POST /api/simulator/pay` — customer completes payment |
-| 3.8 | LLM conversational agent | ⬜ | — | Handle customer replies with context-aware responses |
+| 3.1 | Communication manager | ✅ | Agent | `src/lib/communication/manager.ts` — channel dispatch orchestration |
+| 3.2 | WhatsApp simulator | ✅ | Agent | `src/lib/communication/whatsapp.ts` — simulate message delivery + read receipt |
+| 3.3 | SMS simulator | ✅ | Agent | `src/lib/communication/sms.ts` — simulate DLT template delivery |
+| 3.4 | Voice call simulator | ✅ | Agent | `src/lib/communication/voice.ts` — simulate Hinglish voice call |
+| 3.5 | Payment link creation integration | ✅ | Agent | `src/lib/razorpay/payment-links.ts` — create links via Razorpay API |
+| 3.6 | Customer reply API route | ✅ | Agent | `POST /api/simulator/reply` — customer sends text response |
+| 3.7 | Payment simulation API route | ✅ | Agent | `POST /api/simulator/pay` — customer completes payment |
+| 3.8 | LLM conversational agent | ✅ | Agent | `src/lib/ai/conversation.ts` — handle customer replies with context-aware responses |
 
 ---
 
