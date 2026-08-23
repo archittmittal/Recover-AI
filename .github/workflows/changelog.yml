@@ -14,31 +14,24 @@ jobs:
     name: Update Changelog on PR Merge
     if: github.event.pull_request.merged == true && !startsWith(github.event.pull_request.head.ref, 'chore/update-changelog')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Update CHANGELOG.md
-        id: update_changelog
+      - name: Update CHANGELOG via GitHub REST API
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const fs = require('fs');
-            const path = 'CHANGELOG.md';
-
-            if (!fs.existsSync(path)) {
-              core.setFailed('CHANGELOG.md not found.');
-              return;
-            }
-
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
             const pr = context.payload.pull_request;
             const prTitle = pr.title.trim();
             const prNumber = pr.number;
             const prUrl = pr.html_url;
             const prAuthor = pr.user.login;
+
+            console.log(`Processing merged PR #${prNumber}: "${prTitle}" by @${prAuthor}`);
 
             // Map conventional commit type to Keep a Changelog section
             let section = '### Maintenance & Performance';
@@ -58,70 +51,175 @@ jobs:
               section = '### Maintenance & Performance';
             }
 
-            // Clean title: remove conventional prefix for cleaner display
             const cleanTitle = prTitle.replace(/^[a-z]+(\([^\)]+\))?:\s*/i, '');
             const entry = `- **${cleanTitle}** in [#${prNumber}](${prUrl}) by @${prAuthor}`;
 
-            let content = fs.readFileSync(path, 'utf8');
+            // Fetch current CHANGELOG.md from main
+            let fileData;
+            try {
+              fileData = await github.rest.repos.getContent({
+                owner,
+                repo,
+                path: 'CHANGELOG.md',
+                ref: 'main'
+              });
+            } catch (err) {
+              core.setFailed(`Failed to fetch CHANGELOG.md: ${err.message}`);
+              return;
+            }
 
-            // Prevent duplicate entries
-            if (content.includes(`[#${prNumber}]`)) {
+            const currentContent = Buffer.from(fileData.data.content, 'base64').toString('utf8');
+
+            if (currentContent.includes(`[#${prNumber}]`)) {
               console.log(`PR #${prNumber} already recorded in CHANGELOG.md. Skipping.`);
               return;
             }
 
             const unreleasedHeader = '## [Unreleased]';
-            const unreleasedIndex = content.indexOf(unreleasedHeader);
+            const unreleasedIndex = currentContent.indexOf(unreleasedHeader);
 
             if (unreleasedIndex === -1) {
               core.setFailed('Could not locate "## [Unreleased]" header in CHANGELOG.md');
               return;
             }
 
-            // Find next version header
-            const afterUnreleased = content.slice(unreleasedIndex + unreleasedHeader.length);
+            const afterUnreleased = currentContent.slice(unreleasedIndex + unreleasedHeader.length);
             const nextVersionMatch = afterUnreleased.match(/\n## \[\d+\.\d+\.\d+\]/);
             const unreleasedSectionEnd = nextVersionMatch
               ? unreleasedIndex + unreleasedHeader.length + nextVersionMatch.index
-              : content.length;
+              : currentContent.length;
 
-            let currentUnreleased = content.slice(
+            let currentUnreleased = currentContent.slice(
               unreleasedIndex + unreleasedHeader.length,
               unreleasedSectionEnd
             );
 
             if (currentUnreleased.includes(section)) {
-              // Section exists in unreleased block, append entry under it
               currentUnreleased = currentUnreleased.replace(
                 section,
                 `${section}\n${entry}`
               );
             } else {
-              // Section does not exist yet under [Unreleased], prepend section + entry
               currentUnreleased = `\n\n${section}\n${entry}${currentUnreleased}`;
             }
 
             const updatedContent =
-              content.slice(0, unreleasedIndex + unreleasedHeader.length) +
+              currentContent.slice(0, unreleasedIndex + unreleasedHeader.length) +
               currentUnreleased +
-              content.slice(unreleasedSectionEnd);
+              currentContent.slice(unreleasedSectionEnd);
 
-            fs.writeFileSync(path, updatedContent, 'utf8');
-            console.log(`Successfully updated CHANGELOG.md for PR #${prNumber}`);
+            const branchName = 'chore/update-changelog';
 
-      - name: Create Pull Request for Changelog Update
-        uses: peter-evans/create-pull-request@v7
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "docs(changelog): update CHANGELOG.md for PR #${{ github.event.pull_request.number }}"
-          title: "docs(changelog): update CHANGELOG.md for PR #${{ github.event.pull_request.number }}"
-          body: |
-            Automated changelog update for merged PR [#${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }}).
-            - **Title**: `${{ github.event.pull_request.title }}`
-            - **Author**: @${{ github.event.pull_request.user.login }}
-          branch: "chore/update-changelog"
-          base: "main"
-          labels: |
-            documentation
-            automated-pr
-          delete-branch: true
+            // Get main branch latest commit SHA
+            const mainRef = await github.rest.git.getRef({
+              owner,
+              repo,
+              ref: 'heads/main'
+            });
+            const mainSha = mainRef.data.object.sha;
+
+            // Check or create chore/update-changelog branch
+            let branchExists = false;
+            try {
+              await github.rest.git.getRef({
+                owner,
+                repo,
+                ref: `heads/${branchName}`
+              });
+              branchExists = true;
+            } catch (e) {
+              branchExists = false;
+            }
+
+            if (!branchExists) {
+              try {
+                await github.rest.git.createRef({
+                  owner,
+                  repo,
+                  ref: `refs/heads/${branchName}`,
+                  sha: mainSha
+                });
+                console.log(`Created branch ${branchName} at ${mainSha}`);
+              } catch (createErr) {
+                console.warn(`Could not create branch: ${createErr.message}`);
+              }
+            }
+
+            // Get current file sha on the branch if it exists, or from main
+            let targetSha = fileData.data.sha;
+            if (branchExists) {
+              try {
+                const branchFileData = await github.rest.repos.getContent({
+                  owner,
+                  repo,
+                  path: 'CHANGELOG.md',
+                  ref: branchName
+                });
+                targetSha = branchFileData.data.sha;
+              } catch (e) {
+                targetSha = fileData.data.sha;
+              }
+            }
+
+            // Update CHANGELOG.md on branch
+            try {
+              await github.rest.repos.createOrUpdateFileContents({
+                owner,
+                repo,
+                path: 'CHANGELOG.md',
+                message: `docs(changelog): update CHANGELOG.md for PR #${prNumber}`,
+                content: Buffer.from(updatedContent).toString('base64'),
+                sha: targetSha,
+                branch: branchName
+              });
+              console.log(`Updated CHANGELOG.md on ${branchName}`);
+            } catch (updateErr) {
+              console.warn(`Branch update failed (${updateErr.message}), falling back to direct main commit...`);
+              await github.rest.repos.createOrUpdateFileContents({
+                owner,
+                repo,
+                path: 'CHANGELOG.md',
+                message: `docs(changelog): update CHANGELOG.md for PR #${prNumber} [skip ci]`,
+                content: Buffer.from(updatedContent).toString('base64'),
+                sha: fileData.data.sha,
+                branch: 'main'
+              });
+              console.log(`Updated CHANGELOG.md directly on main.`);
+              return;
+            }
+
+            // Check if open PR already exists for chore/update-changelog
+            const existingPRs = await github.rest.pulls.list({
+              owner,
+              repo,
+              state: 'open',
+              head: `${owner}:${branchName}`,
+              base: 'main'
+            });
+
+            if (existingPRs.data.length > 0) {
+              console.log(`Existing PR #${existingPRs.data[0].number} already open for ${branchName}. Updated.`);
+            } else {
+              try {
+                const newPr = await github.rest.pulls.create({
+                  owner,
+                  repo,
+                  title: `docs(changelog): update CHANGELOG.md for PR #${prNumber}`,
+                  head: branchName,
+                  base: 'main',
+                  body: `Automated changelog update for merged PR [#${prNumber}](${prUrl}).\n- **Title**: \`${prTitle}\`\n- **Author**: @${prAuthor}`
+                });
+                console.log(`Created PR #${newPr.data.number} for changelog update.`);
+              } catch (prErr) {
+                console.warn(`Could not open PR (${prErr.message}). Merging directly to main...`);
+                await github.rest.repos.createOrUpdateFileContents({
+                  owner,
+                  repo,
+                  path: 'CHANGELOG.md',
+                  message: `docs(changelog): update CHANGELOG.md for PR #${prNumber} [skip ci]`,
+                  content: Buffer.from(updatedContent).toString('base64'),
+                  sha: fileData.data.sha,
+                  branch: 'main'
+                });
+              }
+            }
