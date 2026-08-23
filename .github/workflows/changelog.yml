@@ -1,0 +1,127 @@
+name: Automated Changelog Updater
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-changelog:
+    name: Update Changelog on PR Merge
+    if: github.event.pull_request.merged == true && !startsWith(github.event.pull_request.head.ref, 'chore/update-changelog')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update CHANGELOG.md
+        id: update_changelog
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'CHANGELOG.md';
+
+            if (!fs.existsSync(path)) {
+              core.setFailed('CHANGELOG.md not found.');
+              return;
+            }
+
+            const pr = context.payload.pull_request;
+            const prTitle = pr.title.trim();
+            const prNumber = pr.number;
+            const prUrl = pr.html_url;
+            const prAuthor = pr.user.login;
+
+            // Map conventional commit type to Keep a Changelog section
+            let section = '### Maintenance & Performance';
+            const lowerTitle = prTitle.toLowerCase();
+
+            if (lowerTitle.startsWith('feat')) {
+              section = '### Added';
+            } else if (lowerTitle.startsWith('fix')) {
+              section = '### Fixed';
+            } else if (lowerTitle.startsWith('docs')) {
+              section = '### Documentation';
+            } else if (lowerTitle.startsWith('ci') || lowerTitle.startsWith('build')) {
+              section = '### CI/CD & Build';
+            } else if (lowerTitle.startsWith('sec') || lowerTitle.includes('security')) {
+              section = '### Security';
+            } else if (lowerTitle.startsWith('refactor') || lowerTitle.startsWith('perf')) {
+              section = '### Maintenance & Performance';
+            }
+
+            // Clean title: remove conventional prefix for cleaner display
+            const cleanTitle = prTitle.replace(/^[a-z]+(\([^\)]+\))?:\s*/i, '');
+            const entry = `- **${cleanTitle}** in [#${prNumber}](${prUrl}) by @${prAuthor}`;
+
+            let content = fs.readFileSync(path, 'utf8');
+
+            // Prevent duplicate entries
+            if (content.includes(`[#${prNumber}]`)) {
+              console.log(`PR #${prNumber} already recorded in CHANGELOG.md. Skipping.`);
+              return;
+            }
+
+            const unreleasedHeader = '## [Unreleased]';
+            const unreleasedIndex = content.indexOf(unreleasedHeader);
+
+            if (unreleasedIndex === -1) {
+              core.setFailed('Could not locate "## [Unreleased]" header in CHANGELOG.md');
+              return;
+            }
+
+            // Find next version header
+            const afterUnreleased = content.slice(unreleasedIndex + unreleasedHeader.length);
+            const nextVersionMatch = afterUnreleased.match(/\n## \[\d+\.\d+\.\d+\]/);
+            const unreleasedSectionEnd = nextVersionMatch
+              ? unreleasedIndex + unreleasedHeader.length + nextVersionMatch.index
+              : content.length;
+
+            let currentUnreleased = content.slice(
+              unreleasedIndex + unreleasedHeader.length,
+              unreleasedSectionEnd
+            );
+
+            if (currentUnreleased.includes(section)) {
+              // Section exists in unreleased block, append entry under it
+              currentUnreleased = currentUnreleased.replace(
+                section,
+                `${section}\n${entry}`
+              );
+            } else {
+              // Section does not exist yet under [Unreleased], prepend section + entry
+              currentUnreleased = `\n\n${section}\n${entry}${currentUnreleased}`;
+            }
+
+            const updatedContent =
+              content.slice(0, unreleasedIndex + unreleasedHeader.length) +
+              currentUnreleased +
+              content.slice(unreleasedSectionEnd);
+
+            fs.writeFileSync(path, updatedContent, 'utf8');
+            console.log(`Successfully updated CHANGELOG.md for PR #${prNumber}`);
+
+      - name: Create Pull Request for Changelog Update
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "docs(changelog): update CHANGELOG.md for PR #${{ github.event.pull_request.number }}"
+          title: "docs(changelog): update CHANGELOG.md for PR #${{ github.event.pull_request.number }}"
+          body: |
+            Automated changelog update for merged PR [#${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }}).
+            - **Title**: `${{ github.event.pull_request.title }}`
+            - **Author**: @${{ github.event.pull_request.user.login }}
+          branch: "chore/update-changelog"
+          base: "main"
+          labels: |
+            documentation
+            automated-pr
+          delete-branch: true
