@@ -1,0 +1,50 @@
+name: "CodeQL Advanced Security Analysis"
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Run every Monday at 05:30 UTC (11:00 AM IST)
+    - cron: '30 5 * * 1'
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  analyze:
+    name: CodeQL Static Security Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      # Required for all workflows
+      security-events: write
+      # Required to fetch code and actions
+      contents: read
+      actions: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: javascript-typescript
+            build-mode: none
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL Analysis Engine
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-extended,security-and-quality
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

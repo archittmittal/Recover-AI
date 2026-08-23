@@ -9,6 +9,7 @@
 [Documentation](docs/PROJECT_DOCUMENTATION.md) · [Product Spec](docs/PRD.md) · [Task Board](https://github.com/archittmittal/Recover-AI/issues)
 
 [![OpenSSF Scorecard](https://img.shields.io/github/actions/workflow/status/archittmittal/Recover-AI/scorecard.yml?label=OpenSSF%20Scorecard&logo=openssf)](https://github.com/archittmittal/Recover-AI/security/code-scanning?query=tool%3AScorecard)
+[![CodeQL Security Analysis](https://img.shields.io/github/actions/workflow/status/archittmittal/Recover-AI/codeql.yml?label=CodeQL&logo=github)](https://github.com/archittmittal/Recover-AI/actions/workflows/codeql.yml)
 [![CI Pipeline](https://img.shields.io/github/actions/workflow/status/archittmittal/Recover-AI/ci.yml?label=CI%20Pipeline&logo=githubactions)](https://github.com/archittmittal/Recover-AI/actions/workflows/ci.yml)
 [![Security & Secret Scanning](https://img.shields.io/github/actions/workflow/status/archittmittal/Recover-AI/security.yml?label=Security%20Scanning&logo=gitguardrails)](https://github.com/archittmittal/Recover-AI/actions/workflows/security.yml)
 
