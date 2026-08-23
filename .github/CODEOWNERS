@@ -1,0 +1,18 @@
+# Global repository codeowners
+* @archittmittal @purvanshjoshi
+
+# CI/CD, Workflows & Governance
+/.github/ @archittmittal @purvanshjoshi
+
+# Core Recovery Agent Engine & Strategy Logic
+/src/lib/recovery/ @archittmittal @purvanshjoshi
+/src/lib/ai/ @archittmittal @purvanshjoshi
+/src/lib/razorpay/ @archittmittal @purvanshjoshi
+/src/lib/communication/ @archittmittal @purvanshjoshi
+
+# Database Schema & Migrations
+/src/lib/db/ @archittmittal @purvanshjoshi
+
+# Dashboard & Simulator UI
+/src/components/ @archittmittal @purvanshjoshi
+/src/app/ @archittmittal @purvanshjoshi
