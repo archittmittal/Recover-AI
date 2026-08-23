@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Maintenance & Performance
+- **chore(deps)(deps-dev): bump @types/node from 20.19.43 to 26.2.0** in [#104](https://github.com/archittmittal/Recover-AI/pull/104) by @archittmittal
 - **chore(deps)(deps): bump nanoid from 5.1.16 to 6.0.1** in [#107](https://github.com/archittmittal/Recover-AI/pull/107) by @archittmittal
 
 ### CI/CD & Build
