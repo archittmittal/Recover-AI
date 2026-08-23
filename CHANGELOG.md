@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI/CD & Build
+- **update changelog workflow to push-to-main trigger with skip-ci** in [#112](https://github.com/archittmittal/Recover-AI/pull/112) by @purvanshjoshi
+
 ## [1.0.0] - 2026-08-23
 
 ### Added
