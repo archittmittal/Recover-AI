@@ -30,10 +30,14 @@ export async function sendWhatsAppMessage(
   // We reference payload to preserve interface compatibility while keeping phone PII out of identifiers
   void payload;
 
+  // deliveryStatus reflects only what has genuinely happened at send time.
+  // deliveredAt/readAt are simulated future timestamps for a later
+  // status-callback path to report, not evidence that delivery or reading
+  // has already occurred (see RA-12).
   return {
     channel: 'whatsapp',
     messageId: `wa_msg_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`,
-    deliveryStatus: 'read',
+    deliveryStatus: 'sent',
     deliveredAt: deliveredTime.toISOString(),
     readAt: readTime.toISOString(),
     status: 'success',

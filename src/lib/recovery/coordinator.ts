@@ -12,6 +12,7 @@ import { writeAuditLog } from '../utils/audit';
 import { classifyFailureWithLLM } from '../ai/classifier';
 import { generateRecoveryMessage } from '../ai/messenger';
 import { razorpayClient } from '../razorpay/client';
+import { communicationManager, normalizeDispatchResult } from '../communication/manager';
 import { RecoveryStrategy } from './classifier';
 import { getChannelForAttempt, STRATEGY_CONFIGS } from './strategies';
 import { evaluateStoppingRules } from './stopping-rules';
@@ -83,7 +84,7 @@ export class RecoveryCoordinator {
         strategy: selectedStrategy,
         amountAtRisk: failure.amount,
         amountRecovered: 0,
-        maxAttempts: 3,
+        maxAttempts: STRATEGY_CONFIGS[selectedStrategy].maxAttempts,
         currentAttempt: 0,
         currentChannel: null,
         createdAt: nowStr,
@@ -118,6 +119,56 @@ export class RecoveryCoordinator {
   }
 
   /**
+   * Creates a terminal, non-dispatching journey for a failure whose
+   * customer has no usable contact detail (no razorpay_customer_id, no
+   * phone, no email). Never fabricates contact details to force outreach
+   * through the normal pipeline (see RA-16).
+   */
+  async createUncontactableJourney(failureId: string): Promise<string> {
+    const failureList = await db
+      .select()
+      .from(paymentFailures)
+      .where(eq(paymentFailures.id, failureId))
+      .limit(1);
+
+    if (failureList.length === 0) {
+      throw new Error(`Payment failure not found: ${failureId}`);
+    }
+
+    const failure = failureList[0];
+    const journeyId = generateId('rj');
+    const nowStr = formatIST(getClock().now());
+
+    await db.insert(recoveryJourneys).values({
+      id: journeyId,
+      customerId: failure.customerId,
+      failureId: failure.id,
+      status: 'uncontactable',
+      strategy: 'merchant_alert',
+      amountAtRisk: failure.amount,
+      amountRecovered: 0,
+      maxAttempts: 0,
+      currentAttempt: 0,
+      currentChannel: null,
+      createdAt: nowStr,
+      updatedAt: nowStr,
+    });
+
+    await writeAuditLog({
+      journeyId,
+      actor: 'system',
+      eventType: 'journey_uncontactable',
+      eventData: {
+        failureId: failure.id,
+        amount: failure.amount,
+        reason: 'no_razorpay_customer_id_email_or_phone',
+      },
+    });
+
+    return journeyId;
+  }
+
+  /**
    * Executes the next recovery outreach attempt in the journey lifecycle.
    */
   async processRecoveryAttempt(journeyId: string): Promise<void> {
@@ -131,7 +182,12 @@ export class RecoveryCoordinator {
     const journey = journeyList[0];
 
     // If journey is already closed, do nothing
-    if (journey.status === 'resolved' || journey.status === 'opted_out' || journey.status === 'exhausted') {
+    if (
+      journey.status === 'resolved' ||
+      journey.status === 'opted_out' ||
+      journey.status === 'exhausted' ||
+      journey.status === 'uncontactable'
+    ) {
       return;
     }
 
@@ -161,6 +217,25 @@ export class RecoveryCoordinator {
 
     if (customerList.length === 0) return;
     const customer = customerList[0];
+
+    // Defense in depth: never dispatch to a customer with no usable phone
+    // number, even if this journey wasn't created via the uncontactable
+    // path (see RA-16). No hardcoded fallback contact is invented here.
+    if (!customer.phone) {
+      await writeAuditLog({
+        journeyId,
+        actor: 'system',
+        eventType: 'attempt_aborted',
+        eventData: { reason: 'customer_uncontactable' },
+      });
+      if (journey.status !== 'uncontactable') {
+        await db
+          .update(recoveryJourneys)
+          .set({ status: 'uncontactable', updatedAt: formatIST(getClock().now()) })
+          .where(eq(recoveryJourneys.id, journeyId));
+      }
+      return;
+    }
 
     // Check stopping rules before making an attempt. The 8AM-7PM IST contact
     // window (RBI Fair Practices Code) is enforced here, not skipped — tests
@@ -209,9 +284,13 @@ export class RecoveryCoordinator {
     ) as RecoveryStrategy;
     const channel = getChannelForAttempt(strategy, nextAttempt);
 
-    // Generate Razorpay Payment Link
-    let paymentUrl = `https://rzp.io/i/recov_${journey.id}`;
-    let paymentLinkId = journey.paymentLinkId;
+    // Generate Razorpay Payment Link. A failure here must abort the attempt
+    // rather than degrade to a fabricated URL: a customer sent a dead link
+    // burns one of three attempts for nothing (see RA-14). Skipped attempts
+    // are recoverable on the next sweep; a spent attempt with a broken link
+    // is not.
+    let paymentUrl: string;
+    let paymentLinkId: string | null;
 
     try {
       const plink = await razorpayClient.createPaymentLink({
@@ -221,19 +300,30 @@ export class RecoveryCoordinator {
         description: `Payment recovery attempt #${nextAttempt}`,
         customer: {
           name: customer.name,
-          email: customer.email,
+          email: customer.email ?? undefined,
           contact: customer.phone,
         },
       });
       paymentUrl = plink.short_url;
       paymentLinkId = plink.id;
     } catch (error) {
-      console.warn('[RecoveryCoordinator] Payment link generation fallback:', error);
+      console.warn('[RecoveryCoordinator] Payment link generation failed, aborting attempt:', error);
+      await writeAuditLog({
+        journeyId,
+        actor: 'system',
+        eventType: 'attempt_aborted',
+        eventData: {
+          reason: 'payment_link_unavailable',
+          attemptNumber: nextAttempt,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+      return;
     }
 
     // Generate personalized message via LLM
     const strategyConfig = STRATEGY_CONFIGS[strategy] || STRATEGY_CONFIGS.payment_link;
-    const discount = nextAttempt > 1 && strategyConfig.allowDiscount ? 10 : 0;
+    const discount = nextAttempt > 1 && strategyConfig.allowDiscount ? strategyConfig.maxDiscountPercentage : 0;
 
     const messageResult = await generateRecoveryMessage({
       customerName: customer.name,
@@ -244,6 +334,20 @@ export class RecoveryCoordinator {
       paymentLinkUrl: paymentUrl,
       discountPercentage: discount,
     });
+
+    // Actually dispatch the message through the channel-specific provider,
+    // instead of hardcoding deliveryStatus (see RA-12).
+    const dispatch = await communicationManager.dispatch({
+      channel,
+      toPhone: customer.phone!,
+      toEmail: customer.email ?? undefined,
+      customerName: customer.name,
+      messageText: messageResult.message,
+      paymentLinkUrl: paymentUrl,
+      amount: journey.amountAtRisk,
+      language: (customer.preferredLanguage || 'en') as 'en' | 'hi' | 'hinglish',
+    });
+    const { deliveryStatus, providerMessageId, succeeded } = normalizeDispatchResult(dispatch);
 
     const actionId = generateId('ra');
     // scheduledAt on this row marks when the *next* attempt (nextAttempt + 1) is
@@ -261,13 +365,28 @@ export class RecoveryCoordinator {
       actionType: journey.strategy === 'smart_retry' ? 'retry' : 'payment_link',
       messageContent: messageResult.message,
       llmReasoning: messageResult.llmReasoning,
-      deliveryStatus: 'sent',
+      deliveryStatus,
+      providerMessageId,
       customerResponse: null,
-      outcome: 'pending',
+      outcome: succeeded ? 'pending' : 'failed',
       scheduledAt: scheduleInfo.scheduledIso,
       executedAt: nowStr,
       createdAt: nowStr,
     });
+
+    if (!succeeded) {
+      // Dispatch failed: don't consume the attempt or advance journey state,
+      // so a genuine retry can still occur (attempt accounting on failure
+      // is RA-14's concern; this just avoids silently burning the attempt).
+      await writeAuditLog({
+        journeyId,
+        actionId,
+        actor: 'agent',
+        eventType: 'dispatch_failed',
+        eventData: { attemptNumber: nextAttempt, channel, providerMessageId },
+      });
+      return;
+    }
 
     // Update journey status and attempt
     const newStatus = nextAttempt >= journey.maxAttempts ? 'exhausted' : 'recovering';
@@ -296,6 +415,9 @@ export class RecoveryCoordinator {
         llmReasoning: messageResult.llmReasoning,
         isTemplateFallback: messageResult.isTemplateFallback,
         paymentLinkId,
+        appliedDiscountPercentage: discount,
+        maxDiscountPercentage: strategyConfig.maxDiscountPercentage,
+        providerMessageId,
       },
     });
   }
@@ -384,6 +506,11 @@ export class RecoveryCoordinator {
     if (journeyList.length === 0) return;
     const journey = journeyList[0];
 
+    // Idempotency guard: this journey's payment has already been recorded.
+    // Without this, repeated calls (retried webhooks, replayed simulator
+    // requests) would keep incrementing the customer's lifetime total.
+    if (journey.status === 'resolved') return;
+
     await db
       .update(recoveryJourneys)
       .set({
@@ -395,23 +522,42 @@ export class RecoveryCoordinator {
       })
       .where(eq(recoveryJourneys.id, journeyId));
 
-    // Update customer total recovered statistics
-    const customerList = await db
+    // Attribute the conversion to the most recent outreach action so channel
+    // metrics can report real conversion rates instead of always reading 0.
+    const [lastAction] = await db
       .select()
-      .from(customers)
-      .where(eq(customers.id, journey.customerId))
+      .from(recoveryActions)
+      .where(eq(recoveryActions.journeyId, journeyId))
+      .orderBy(desc(recoveryActions.attemptNumber))
       .limit(1);
 
-    if (customerList.length > 0) {
-      const customer = customerList[0];
+    if (lastAction) {
       await db
-        .update(customers)
-        .set({
-          totalRecoveredAmount: (customer.totalRecoveredAmount || 0) + amountPaid,
-          updatedAt: nowStr,
-        })
-        .where(eq(customers.id, customer.id));
+        .update(recoveryActions)
+        .set({ outcome: 'payment_completed' })
+        .where(eq(recoveryActions.id, lastAction.id));
     }
+
+    // Recompute the customer's lifetime recovered total as a derived sum over
+    // their journeys, rather than maintaining an incrementing counter that
+    // can drift out of sync with the source of truth.
+    const customerJourneys = await db
+      .select({ amountRecovered: recoveryJourneys.amountRecovered })
+      .from(recoveryJourneys)
+      .where(eq(recoveryJourneys.customerId, journey.customerId));
+
+    const totalRecoveredAmount = customerJourneys.reduce(
+      (sum, j) => sum + j.amountRecovered,
+      0
+    );
+
+    await db
+      .update(customers)
+      .set({
+        totalRecoveredAmount,
+        updatedAt: nowStr,
+      })
+      .where(eq(customers.id, journey.customerId));
 
     await writeAuditLog({
       journeyId,

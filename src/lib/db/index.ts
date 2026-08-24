@@ -13,9 +13,10 @@ function initializeTables(sqlite: Database.Database) {
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS customers (
       id TEXT PRIMARY KEY,
+      razorpay_customer_id TEXT UNIQUE,
       name TEXT NOT NULL,
-      email TEXT NOT NULL,
-      phone TEXT NOT NULL,
+      email TEXT UNIQUE,
+      phone TEXT,
       preferred_language TEXT NOT NULL,
       segment TEXT NOT NULL,
       total_failures INTEGER NOT NULL DEFAULT 0,
@@ -71,6 +72,7 @@ function initializeTables(sqlite: Database.Database) {
       message_content TEXT NOT NULL,
       llm_reasoning TEXT,
       delivery_status TEXT NOT NULL,
+      provider_message_id TEXT,
       customer_response TEXT,
       outcome TEXT NOT NULL,
       scheduled_at TEXT NOT NULL,
@@ -97,6 +99,12 @@ function initializeTables(sqlite: Database.Database) {
       received_at TEXT NOT NULL,
       processed_at TEXT
     );
+
+    CREATE INDEX IF NOT EXISTS idx_failures_customer ON payment_failures(customer_id);
+    CREATE INDEX IF NOT EXISTS idx_journeys_customer ON recovery_journeys(customer_id);
+    CREATE INDEX IF NOT EXISTS idx_journeys_failure ON recovery_journeys(failure_id);
+    CREATE INDEX IF NOT EXISTS idx_actions_journey ON recovery_actions(journey_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_journey ON audit_logs(journey_id);
   `);
 }
 

@@ -1,5 +1,6 @@
 import { gemini } from './gemini';
 import { CONVERSATIONAL_REPLY_SYSTEM_PROMPT } from './prompts';
+import { detectOptOut } from '../recovery/stopping-rules';
 import { sanitizePromptInput } from './sanitize';
 
 export interface ConversationInput {
@@ -22,18 +23,10 @@ export interface ConversationResponse {
 export async function processCustomerConversation(
   input: ConversationInput
 ): Promise<ConversationResponse> {
-  const text = input.customerMessage.trim().toLowerCase();
-
-  // 1. Fast deterministic check for hard opt-outs across English and Hindi/Hinglish
-  if (
-    text === 'stop' ||
-    text.includes('stop') ||
-    text.includes('unsubscribe') ||
-    text.includes('band karo') ||
-    text.includes('mat bhejo') ||
-    text.includes('mat karo') ||
-    text.includes('cancel')
-  ) {
+  // 1. Fast deterministic check for hard opt-outs across English and Hindi/Hinglish.
+  // Uses the same matcher as the deterministic stopping-rule engine so the two
+  // can never drift out of sync (see RA-08/RA-11).
+  if (detectOptOut(input.customerMessage)) {
     return {
       responseMessage: `You have been unsubscribed. No further messages will be sent. Thank you.`,
       intent: 'opt_out',
