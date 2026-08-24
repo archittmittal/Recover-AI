@@ -84,7 +84,7 @@ export class RecoveryCoordinator {
         strategy: selectedStrategy,
         amountAtRisk: failure.amount,
         amountRecovered: 0,
-        maxAttempts: 3,
+        maxAttempts: STRATEGY_CONFIGS[selectedStrategy].maxAttempts,
         currentAttempt: 0,
         currentChannel: null,
         createdAt: nowStr,
@@ -249,7 +249,7 @@ export class RecoveryCoordinator {
 
     // Generate personalized message via LLM
     const strategyConfig = STRATEGY_CONFIGS[strategy] || STRATEGY_CONFIGS.payment_link;
-    const discount = nextAttempt > 1 && strategyConfig.allowDiscount ? 10 : 0;
+    const discount = nextAttempt > 1 && strategyConfig.allowDiscount ? strategyConfig.maxDiscountPercentage : 0;
 
     const messageResult = await generateRecoveryMessage({
       customerName: customer.name,
@@ -341,6 +341,8 @@ export class RecoveryCoordinator {
         llmReasoning: messageResult.llmReasoning,
         isTemplateFallback: messageResult.isTemplateFallback,
         paymentLinkId,
+        appliedDiscountPercentage: discount,
+        maxDiscountPercentage: strategyConfig.maxDiscountPercentage,
         providerMessageId,
       },
     });
