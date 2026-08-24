@@ -1,5 +1,6 @@
 import { gemini } from './gemini';
 import { CLASSIFICATION_SYSTEM_PROMPT } from './prompts';
+import { sanitizePromptInput } from './sanitize';
 import {
   ClassificationInput,
   ClassificationResult,
@@ -23,14 +24,16 @@ export async function classifyFailureWithLLM(
   }
 
   try {
+    // These fields originate from Razorpay's payment error_* attributes, which are
+    // typed as open strings — contain them before they reach the prompt (RA-03).
     const prompt = `
 Analyze this payment failure payload:
-- error_source: "${input.errorSource}"
-- error_step: "${input.errorStep}"
-- error_code: "${input.errorCode}"
-- error_reason: "${input.errorReason}"
-- failure_type: "${input.failureType}"
-- customer_segment: "${input.customerSegment || 'b2c'}"
+- error_source: "${sanitizePromptInput(input.errorSource, 60)}"
+- error_step: "${sanitizePromptInput(input.errorStep, 60)}"
+- error_code: "${sanitizePromptInput(input.errorCode, 60)}"
+- error_reason: "${sanitizePromptInput(input.errorReason, 60)}"
+- failure_type: "${sanitizePromptInput(input.failureType, 60)}"
+- customer_segment: "${sanitizePromptInput(input.customerSegment || 'b2c', 30)}"
 - amount_in_paise: ${input.amount || 0}
 `;
 
