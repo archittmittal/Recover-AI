@@ -34,8 +34,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const payload = JSON.parse(rawBody) as RazorpayWebhookPayload & { id?: string };
-    const eventId = payload.id || `evt_${generateId('audit')}`;
+    // Razorpay identifies each webhook delivery via the x-razorpay-event-id header,
+    // not a field in the JSON body (the body carries no top-level `id` at all — see
+    // RazorpayWebhookPayload). Relying on a body field that is never sent meant
+    // deduplication silently never matched (RA-04).
+    const eventId = req.headers.get('x-razorpay-event-id');
+    if (!eventId) {
+      return NextResponse.json(
+        { success: false, error: { code: 'MISSING_EVENT_ID', message: 'Missing x-razorpay-event-id header' } },
+        { status: 400 }
+      );
+    }
+
+    const payload = JSON.parse(rawBody) as RazorpayWebhookPayload;
     const payloadHash = computePayloadHash(rawBody);
     const nowStr = formatIST(getClock().now());
 
