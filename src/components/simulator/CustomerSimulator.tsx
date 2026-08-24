@@ -20,7 +20,7 @@ import {
 export interface SimCustomer {
   id: string;
   name: string;
-  phone: string;
+  phone: string | null;
   preferredLanguage: string;
 }
 
@@ -120,6 +120,9 @@ export function CustomerSimulator({
   actions.forEach((action) => {
     // 1. Agent outreach message
     if (action.messageContent) {
+      // Show the "pay now" CTA only when the actual dispatched message
+      // contains a real link, instead of fabricating one (see RA-14).
+      const linkMatch = action.messageContent.match(/https?:\/\/\S+/);
       messages.push({
         id: `ra_agent_${action.id}`,
         sender: 'agent',
@@ -127,7 +130,7 @@ export function CustomerSimulator({
         content: action.messageContent,
         timestamp: action.executedAt || action.createdAt || '',
         deliveryStatus: action.deliveryStatus,
-        paymentLinkUrl: `https://rzp.io/i/recov_${journey?.id || 'demo'}`,
+        paymentLinkUrl: linkMatch?.[0],
         llmReasoning: action.llmReasoning || undefined,
         onPayClick: () => handlePay(),
       });
@@ -208,7 +211,7 @@ export function CustomerSimulator({
               {journey && <JourneyStatusBadge status={journey.status} />}
             </CardTitle>
             <CardDescription className="text-xs text-zinc-500 mt-0.5">
-              Phone: {customer.phone} • Language: {customer.preferredLanguage.toUpperCase()} • Attempt: {journey?.currentAttempt || 0}/{journey?.maxAttempts || 3}
+              Phone: {customer.phone || 'Not on file'} • Language: {customer.preferredLanguage.toUpperCase()} • Attempt: {journey?.currentAttempt || 0}/{journey?.maxAttempts || 3}
             </CardDescription>
           </div>
 
