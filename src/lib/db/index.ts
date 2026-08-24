@@ -71,6 +71,7 @@ function initializeTables(sqlite: Database.Database) {
       message_content TEXT NOT NULL,
       llm_reasoning TEXT,
       delivery_status TEXT NOT NULL,
+      provider_message_id TEXT,
       customer_response TEXT,
       outcome TEXT NOT NULL,
       scheduled_at TEXT NOT NULL,

@@ -12,6 +12,7 @@ import { writeAuditLog } from '../utils/audit';
 import { classifyFailureWithLLM } from '../ai/classifier';
 import { generateRecoveryMessage } from '../ai/messenger';
 import { razorpayClient } from '../razorpay/client';
+import { communicationManager, normalizeDispatchResult } from '../communication/manager';
 import { RecoveryStrategy } from './classifier';
 import { getChannelForAttempt, STRATEGY_CONFIGS } from './strategies';
 import { evaluateStoppingRules } from './stopping-rules';
@@ -245,6 +246,20 @@ export class RecoveryCoordinator {
       discountPercentage: discount,
     });
 
+    // Actually dispatch the message through the channel-specific provider,
+    // instead of hardcoding deliveryStatus (see RA-12).
+    const dispatch = await communicationManager.dispatch({
+      channel,
+      toPhone: customer.phone,
+      toEmail: customer.email,
+      customerName: customer.name,
+      messageText: messageResult.message,
+      paymentLinkUrl: paymentUrl,
+      amount: journey.amountAtRisk,
+      language: (customer.preferredLanguage || 'en') as 'en' | 'hi' | 'hinglish',
+    });
+    const { deliveryStatus, providerMessageId, succeeded } = normalizeDispatchResult(dispatch);
+
     const actionId = generateId('ra');
     // scheduledAt on this row marks when the *next* attempt (nextAttempt + 1) is
     // allowed to fire, per the strategy's configured backoff — not when this
@@ -261,13 +276,28 @@ export class RecoveryCoordinator {
       actionType: journey.strategy === 'smart_retry' ? 'retry' : 'payment_link',
       messageContent: messageResult.message,
       llmReasoning: messageResult.llmReasoning,
-      deliveryStatus: 'sent',
+      deliveryStatus,
+      providerMessageId,
       customerResponse: null,
-      outcome: 'pending',
+      outcome: succeeded ? 'pending' : 'failed',
       scheduledAt: scheduleInfo.scheduledIso,
       executedAt: nowStr,
       createdAt: nowStr,
     });
+
+    if (!succeeded) {
+      // Dispatch failed: don't consume the attempt or advance journey state,
+      // so a genuine retry can still occur (attempt accounting on failure
+      // is RA-14's concern; this just avoids silently burning the attempt).
+      await writeAuditLog({
+        journeyId,
+        actionId,
+        actor: 'agent',
+        eventType: 'dispatch_failed',
+        eventData: { attemptNumber: nextAttempt, channel, providerMessageId },
+      });
+      return;
+    }
 
     // Update journey status and attempt
     const newStatus = nextAttempt >= journey.maxAttempts ? 'exhausted' : 'recovering';
@@ -296,6 +326,7 @@ export class RecoveryCoordinator {
         llmReasoning: messageResult.llmReasoning,
         isTemplateFallback: messageResult.isTemplateFallback,
         paymentLinkId,
+        providerMessageId,
       },
     });
   }
