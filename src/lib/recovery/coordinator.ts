@@ -384,6 +384,11 @@ export class RecoveryCoordinator {
     if (journeyList.length === 0) return;
     const journey = journeyList[0];
 
+    // Idempotency guard: this journey's payment has already been recorded.
+    // Without this, repeated calls (retried webhooks, replayed simulator
+    // requests) would keep incrementing the customer's lifetime total.
+    if (journey.status === 'resolved') return;
+
     await db
       .update(recoveryJourneys)
       .set({
@@ -395,23 +400,42 @@ export class RecoveryCoordinator {
       })
       .where(eq(recoveryJourneys.id, journeyId));
 
-    // Update customer total recovered statistics
-    const customerList = await db
+    // Attribute the conversion to the most recent outreach action so channel
+    // metrics can report real conversion rates instead of always reading 0.
+    const [lastAction] = await db
       .select()
-      .from(customers)
-      .where(eq(customers.id, journey.customerId))
+      .from(recoveryActions)
+      .where(eq(recoveryActions.journeyId, journeyId))
+      .orderBy(desc(recoveryActions.attemptNumber))
       .limit(1);
 
-    if (customerList.length > 0) {
-      const customer = customerList[0];
+    if (lastAction) {
       await db
-        .update(customers)
-        .set({
-          totalRecoveredAmount: (customer.totalRecoveredAmount || 0) + amountPaid,
-          updatedAt: nowStr,
-        })
-        .where(eq(customers.id, customer.id));
+        .update(recoveryActions)
+        .set({ outcome: 'payment_completed' })
+        .where(eq(recoveryActions.id, lastAction.id));
     }
+
+    // Recompute the customer's lifetime recovered total as a derived sum over
+    // their journeys, rather than maintaining an incrementing counter that
+    // can drift out of sync with the source of truth.
+    const customerJourneys = await db
+      .select({ amountRecovered: recoveryJourneys.amountRecovered })
+      .from(recoveryJourneys)
+      .where(eq(recoveryJourneys.customerId, journey.customerId));
+
+    const totalRecoveredAmount = customerJourneys.reduce(
+      (sum, j) => sum + j.amountRecovered,
+      0
+    );
+
+    await db
+      .update(customers)
+      .set({
+        totalRecoveredAmount,
+        updatedAt: nowStr,
+      })
+      .where(eq(customers.id, journey.customerId));
 
     await writeAuditLog({
       journeyId,
