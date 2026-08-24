@@ -5,7 +5,7 @@ import {
   recoveryJourneys,
   recoveryActions,
 } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, desc } from 'drizzle-orm';
 import { generateId } from '../utils/ids';
 import { getClock, formatIST } from '../utils/time';
 import { writeAuditLog } from '../utils/audit';
@@ -135,6 +135,24 @@ export class RecoveryCoordinator {
       return;
     }
 
+    // Respect the strategy's configured retry backoff (retryIntervalsHours). Each
+    // action's scheduledAt records the earliest time the *next* attempt may fire
+    // (see where it's computed below); if that time hasn't arrived, this call is
+    // a no-op instead of dispatching immediately (RA-07). Without this, a caller
+    // that invokes processRecoveryAttempt repeatedly — e.g. a sweep triggered
+    // every minute — burns a journey's entire attempt ladder in seconds instead
+    // of across the days retryIntervalsHours specifies.
+    const [latestAction] = await db
+      .select()
+      .from(recoveryActions)
+      .where(eq(recoveryActions.journeyId, journeyId))
+      .orderBy(desc(recoveryActions.attemptNumber))
+      .limit(1);
+
+    if (latestAction && new Date(latestAction.scheduledAt) > getClock().now()) {
+      return;
+    }
+
     const customerList = await db
       .select()
       .from(customers)
@@ -228,7 +246,11 @@ export class RecoveryCoordinator {
     });
 
     const actionId = generateId('ra');
-    const scheduleInfo = calculateNextScheduledTime(0);
+    // scheduledAt on this row marks when the *next* attempt (nextAttempt + 1) is
+    // allowed to fire, per the strategy's configured backoff — not when this
+    // attempt itself ran (that's executedAt, set to nowStr below).
+    const nextIntervalHours = strategyConfig.retryIntervalsHours[nextAttempt - 1] ?? 24;
+    const scheduleInfo = calculateNextScheduledTime(nextIntervalHours);
 
     // Record recovery action
     await db.insert(recoveryActions).values({
