@@ -1,0 +1,1 @@
+ALTER TABLE `recovery_actions` ADD `provider_message_id` text;

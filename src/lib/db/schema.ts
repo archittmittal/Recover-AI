@@ -61,6 +61,7 @@ export const recoveryActions = sqliteTable('recovery_actions', {
   messageContent: text('message_content').notNull(),
   llmReasoning: text('llm_reasoning'),
   deliveryStatus: text('delivery_status').notNull(), // 'sent' | 'delivered' | 'read' | 'failed'
+  providerMessageId: text('provider_message_id'),
   customerResponse: text('customer_response'),
   outcome: text('outcome').notNull(), // 'pending' | 'payment_completed' | 'ignored' | 'opted_out' | 'failed'
   scheduledAt: text('scheduled_at').notNull(),

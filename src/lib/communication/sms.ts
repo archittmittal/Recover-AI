@@ -24,10 +24,13 @@ export async function sendSmsMessage(
   const now = new Date();
   const deliveredTime = new Date(now.getTime() + 800);
 
+  // deliveryStatus reflects only what has genuinely happened at send time;
+  // deliveredAt is a simulated future timestamp, not evidence of delivery
+  // (see RA-12).
   return {
     channel: 'sms',
     messageId: `sms_msg_${Date.now()}`,
-    deliveryStatus: 'delivered',
+    deliveryStatus: 'sent',
     deliveredAt: deliveredTime.toISOString(),
     senderId: payload.senderId || 'RCVRAI',
     dltEntityId: '1101458920000012345',
