@@ -1,0 +1,138 @@
+name: Automated Changelog Updater
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-changelog:
+    name: Update Changelog on Main Push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Parse Commit & Update CHANGELOG.md
+        id: update_changelog
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'CHANGELOG.md';
+
+            if (!fs.existsSync(path)) {
+              console.log('CHANGELOG.md does not exist yet.');
+              return;
+            }
+
+            // Get the latest commit on main
+            const headCommit = context.payload.head_commit;
+            if (!headCommit) {
+              console.log('No head commit payload found.');
+              return;
+            }
+
+            const message = headCommit.message || '';
+            console.log(`Analyzing commit message: "${message.split('\n')[0]}"`);
+
+            // Check if commit is a merge commit or direct PR merge
+            const prMatch = message.match(/Merge pull request #(\d+)/i) || message.match(/\(#(\d+)\)/);
+            const prNumber = prMatch ? prMatch[1] : null;
+
+            if (!prNumber) {
+              console.log('Not a PR merge commit. Skipping automated changelog update.');
+              return;
+            }
+
+            const prUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/pull/${prNumber}`;
+            const author = headCommit.author ? headCommit.author.username || headCommit.author.name : 'contributor';
+
+            // Extract the PR subject
+            let subject = message.split('\n')[0];
+            if (subject.startsWith('Merge pull request')) {
+              const lines = message.split('\n').filter(l => l.trim().length > 0);
+              subject = lines.length > 1 ? lines[1].trim() : subject;
+            }
+
+            // Categorize according to Keep a Changelog
+            let section = '### Maintenance & Performance';
+            const lowerSubject = subject.toLowerCase();
+
+            if (lowerSubject.startsWith('feat')) {
+              section = '### Added';
+            } else if (lowerSubject.startsWith('fix')) {
+              section = '### Fixed';
+            } else if (lowerSubject.startsWith('docs')) {
+              section = '### Documentation';
+            } else if (lowerSubject.startsWith('ci') || lowerSubject.startsWith('build')) {
+              section = '### CI/CD & Build';
+            } else if (lowerSubject.startsWith('sec') || lowerSubject.includes('security')) {
+              section = '### Security';
+            } else if (lowerSubject.startsWith('refactor') || lowerSubject.startsWith('perf')) {
+              section = '### Maintenance & Performance';
+            }
+
+            const cleanTitle = subject.replace(/^[a-z]+(\([^\)]+\))?:\s*/i, '').replace(/\s*\(#\d+\)$/, '');
+            const entry = `- **${cleanTitle}** in [#${prNumber}](${prUrl}) by @${author}`;
+
+            let content = fs.readFileSync(path, 'utf8');
+
+            if (content.includes(`[#${prNumber}]`)) {
+              console.log(`PR #${prNumber} is already recorded in CHANGELOG.md. Skipping.`);
+              return;
+            }
+
+            const unreleasedHeader = '## [Unreleased]';
+            const unreleasedIndex = content.indexOf(unreleasedHeader);
+
+            if (unreleasedIndex === -1) {
+              console.warn('Could not locate "## [Unreleased]" in CHANGELOG.md');
+              return;
+            }
+
+            const afterUnreleased = content.slice(unreleasedIndex + unreleasedHeader.length);
+            const nextVersionMatch = afterUnreleased.match(/\n## \[\d+\.\d+\.\d+\]/);
+            const unreleasedSectionEnd = nextVersionMatch
+              ? unreleasedIndex + unreleasedHeader.length + nextVersionMatch.index
+              : content.length;
+
+            let currentUnreleased = content.slice(
+              unreleasedIndex + unreleasedHeader.length,
+              unreleasedSectionEnd
+            );
+
+            if (currentUnreleased.includes(section)) {
+              currentUnreleased = currentUnreleased.replace(
+                section,
+                `${section}\n${entry}`
+              );
+            } else {
+              currentUnreleased = `\n\n${section}\n${entry}${currentUnreleased}`;
+            }
+
+            const updatedContent =
+              content.slice(0, unreleasedIndex + unreleasedHeader.length) +
+              currentUnreleased +
+              content.slice(unreleasedSectionEnd);
+
+            fs.writeFileSync(path, updatedContent, 'utf8');
+            console.log(`Updated CHANGELOG.md with entry: ${entry}`);
+            core.setOutput('updated', 'true');
+            core.setOutput('pr_number', prNumber);
+
+      - name: Commit and Push to Main
+        if: steps.update_changelog.outputs.updated == 'true'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "docs(changelog): update CHANGELOG.md for PR #${{ steps.update_changelog.outputs.pr_number }} [skip ci]"
+          git push origin main

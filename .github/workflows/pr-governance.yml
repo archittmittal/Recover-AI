@@ -10,10 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Validate Conventional Commit Title
-        uses: amannn/action-semantic-pull-request@v5
+        uses: amannn/action-semantic-pull-request@v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -31,7 +31,7 @@ jobs:
           requireScope: false
 
       - name: Validate Issue Linkage
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const prBody = context.payload.pull_request.body || '';
@@ -50,7 +50,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Assert No Simulation Imports in Agent Engine
         run: |
