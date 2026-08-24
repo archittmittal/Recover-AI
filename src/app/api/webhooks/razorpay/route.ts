@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { webhookEvents, paymentFailures, customers } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { verifyWebhookSignature, computePayloadHash } from '@/lib/razorpay/webhooks';
 import { RazorpayWebhookPayload } from '@/lib/razorpay/types';
 import { recoveryCoordinator } from '@/lib/recovery/coordinator';
@@ -12,50 +12,103 @@ import { normalizePhoneE164 } from '@/lib/utils/phone';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
+  let eventId: string | undefined;
+
   try {
     const rawBody = await req.text();
     const signature = req.headers.get('x-razorpay-signature') || '';
     const secret = process.env.RAZORPAY_WEBHOOK_SECRET || '';
 
-    // Signature verification (in production or when secret is set)
-    if (secret && !secret.includes('XXXXXXXX')) {
-      const isValid = verifyWebhookSignature(rawBody, signature, secret);
-      if (!isValid) {
-        return NextResponse.json(
-          { success: false, error: { code: 'INVALID_SIGNATURE', message: 'Invalid webhook signature' } },
-          { status: 400 }
-        );
-      }
+    // Signature verification is mandatory. A missing or placeholder secret is a
+    // deployment misconfiguration, not permission to skip verification (RA-01).
+    if (!secret || secret.includes('XXXXXXXX')) {
+      console.error('[webhook:razorpay] RAZORPAY_WEBHOOK_SECRET not configured — rejecting request');
+      return NextResponse.json(
+        { success: false, error: { code: 'NOT_CONFIGURED', message: 'Webhook secret not configured' } },
+        { status: 503 }
+      );
     }
 
-    const payload = JSON.parse(rawBody) as RazorpayWebhookPayload & { id?: string };
-    const eventId = payload.id || `evt_${generateId('audit')}`;
+    const isValid = verifyWebhookSignature(rawBody, signature, secret);
+    if (!isValid) {
+      return NextResponse.json(
+        { success: false, error: { code: 'INVALID_SIGNATURE', message: 'Invalid webhook signature' } },
+        { status: 400 }
+      );
+    }
+
+    // Razorpay identifies each webhook delivery via the x-razorpay-event-id header,
+    // not a field in the JSON body (the body carries no top-level `id` at all — see
+    // RazorpayWebhookPayload). Relying on a body field that is never sent meant
+    // deduplication silently never matched (RA-04).
+    eventId = req.headers.get('x-razorpay-event-id') || undefined;
+    if (!eventId) {
+      return NextResponse.json(
+        { success: false, error: { code: 'MISSING_EVENT_ID', message: 'Missing x-razorpay-event-id header' } },
+        { status: 400 }
+      );
+    }
+
+    const payload = JSON.parse(rawBody) as RazorpayWebhookPayload;
     const payloadHash = computePayloadHash(rawBody);
     const nowStr = formatIST(getClock().now());
 
-    // 1. Idempotency Check: Claim event in webhook_events table
-    const existingEvent = await db
-      .select()
-      .from(webhookEvents)
-      .where(eq(webhookEvents.id, eventId))
-      .limit(1);
+    // 1. Idempotency Claim: atomic insert-or-conflict on the primary key, so
+    // two concurrent deliveries of the same event can never both proceed
+    // (the previous select-then-insert was a TOCTOU race).
+    const claimed = await db
+      .insert(webhookEvents)
+      .values({
+        id: eventId,
+        eventType: payload.event,
+        payloadHash,
+        processingStatus: 'processing',
+        receivedAt: nowStr,
+      })
+      .onConflictDoNothing()
+      .returning();
 
-    if (existingEvent.length > 0) {
-      // Event has already been processed or is currently being processed
-      return NextResponse.json({
-        success: true,
-        data: { message: 'Duplicate webhook event ignored (idempotent)', eventId },
-      });
+    if (claimed.length === 0) {
+      const [prior] = await db
+        .select()
+        .from(webhookEvents)
+        .where(eq(webhookEvents.id, eventId))
+        .limit(1);
+
+      if (prior?.processingStatus === 'processed') {
+        // Only a genuinely completed event is a true duplicate.
+        return NextResponse.json({
+          success: true,
+          data: { message: 'Duplicate webhook event ignored (idempotent)', eventId },
+        });
+      }
+
+      if (prior?.processingStatus === 'failed') {
+        // A prior attempt errored out. Reclaim atomically (compare-and-swap
+        // on status) and reprocess this delivery instead of swallowing it.
+        const reclaimed = await db
+          .update(webhookEvents)
+          .set({ processingStatus: 'processing', errorMessage: null })
+          .where(and(eq(webhookEvents.id, eventId), eq(webhookEvents.processingStatus, 'failed')))
+          .returning();
+
+        if (reclaimed.length === 0) {
+          // Lost the reclaim race to another concurrent retry delivery.
+          return NextResponse.json(
+            { success: false, error: { code: 'RETRY', message: 'Event reprocessing already in progress' } },
+            { status: 503 }
+          );
+        }
+        // Falls through to process the event below.
+      } else {
+        // Still 'processing' — another delivery is actively working on it.
+        // Ask Razorpay to retry later rather than reporting false success.
+        return NextResponse.json(
+          { success: false, error: { code: 'RETRY', message: 'Event is currently being processed' } },
+          { status: 503 }
+        );
+      }
     }
-
-    // Insert as processing
-    await db.insert(webhookEvents).values({
-      id: eventId,
-      eventType: payload.event,
-      payloadHash,
-      processingStatus: 'processing',
-      receivedAt: nowStr,
-    });
 
     // 2. Process Event Types
     if (payload.event === 'payment.failed' && payload.payload.payment) {
@@ -184,6 +237,22 @@ export async function POST(req: NextRequest) {
   } catch (error: unknown) {
     const errorMsg = error instanceof Error ? error.message : 'Unknown webhook error';
     console.error('[POST /api/webhooks/razorpay]', error);
+
+    if (eventId) {
+      try {
+        await db
+          .update(webhookEvents)
+          .set({
+            processingStatus: 'failed',
+            errorMessage: errorMsg,
+            processedAt: formatIST(getClock().now()),
+          })
+          .where(eq(webhookEvents.id, eventId));
+      } catch (updateError) {
+        console.error('[POST /api/webhooks/razorpay] Failed to mark event as failed', updateError);
+      }
+    }
+
     return NextResponse.json(
       { success: false, error: { code: 'WEBHOOK_PROCESSING_ERROR', message: errorMsg } },
       { status: 500 }

@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "236add26-43bc-4793-ba08-472afcfa38c2",
-  "prevId": "35b01353-e95a-46f7-b649-42579a5f530c",
+  "id": "a22d5fe5-cde5-407a-91d6-5b1aa7cfcbc6",
+  "prevId": "236add26-43bc-4793-ba08-472afcfa38c2",
   "tables": {
     "audit_logs": {
       "name": "audit_logs",
@@ -58,34 +58,80 @@
         }
       },
       "indexes": {},
-      "foreignKeys": {
-        "audit_logs_journey_id_recovery_journeys_id_fk": {
-          "name": "audit_logs_journey_id_recovery_journeys_id_fk",
-          "tableFrom": "audit_logs",
-          "tableTo": "recovery_journeys",
-          "columnsFrom": [
-            "journey_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "channel_logs": {
+      "name": "channel_logs",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
         },
-        "audit_logs_action_id_recovery_actions_id_fk": {
-          "name": "audit_logs_action_id_recovery_actions_id_fk",
-          "tableFrom": "audit_logs",
-          "tableTo": "recovery_actions",
-          "columnsFrom": [
-            "action_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+        "action_id": {
+          "name": "action_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "channel": {
+          "name": "channel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "request_payload": {
+          "name": "request_payload",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "response_payload": {
+          "name": "response_payload",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status_code": {
+          "name": "status_code",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "duration_ms": {
+          "name": "duration_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
         }
       },
+      "indexes": {},
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
@@ -100,6 +146,13 @@
           "notNull": true,
           "autoincrement": false
         },
+        "razorpay_customer_id": {
+          "name": "razorpay_customer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "name": {
           "name": "name",
           "type": "text",
@@ -111,14 +164,14 @@
           "name": "email",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "phone": {
           "name": "phone",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "preferred_language": {
@@ -174,7 +227,22 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "customers_razorpay_customer_id_unique": {
+          "name": "customers_razorpay_customer_id_unique",
+          "columns": [
+            "razorpay_customer_id"
+          ],
+          "isUnique": true
+        },
+        "customers_email_unique": {
+          "name": "customers_email_unique",
+          "columns": [
+            "email"
+          ],
+          "isUnique": true
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},

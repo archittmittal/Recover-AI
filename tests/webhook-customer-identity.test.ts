@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import crypto from 'crypto';
 import fs from 'fs';
 import { NextRequest } from 'next/server';
@@ -16,11 +16,24 @@ const { generateId } = await import('../src/lib/utils/ids');
 const { getClock, formatIST } = await import('../src/lib/utils/time');
 const { recoveryCoordinator } = await import('../src/lib/recovery/coordinator');
 
-function buildRequest(body: unknown) {
+const secret = 'ra16-test-secret';
+const originalSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+
+function sign(body: string) {
+  return crypto.createHmac('sha256', secret).update(body).digest('hex');
+}
+
+function buildRequest(body: { id?: string } & Record<string, unknown>, eventId?: string) {
+  const rawBody = JSON.stringify(body);
+  const actualEventId = eventId || body.id || `evt_${crypto.randomUUID()}`;
   return new NextRequest('http://localhost/api/webhooks/razorpay', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
+    headers: {
+      'content-type': 'application/json',
+      'x-razorpay-signature': sign(rawBody),
+      'x-razorpay-event-id': actualEventId,
+    },
+    body: rawBody,
   });
 }
 
@@ -58,7 +71,16 @@ function paymentFailedPayload(overrides: {
 }
 
 describe('Webhook customer identity resolution (RA-16)', () => {
+  beforeAll(() => {
+    process.env.RAZORPAY_WEBHOOK_SECRET = secret;
+  });
+
   afterAll(() => {
+    if (originalSecret === undefined) {
+      delete process.env.RAZORPAY_WEBHOOK_SECRET;
+    } else {
+      process.env.RAZORPAY_WEBHOOK_SECRET = originalSecret;
+    }
     for (const suffix of ['', '-wal', '-shm']) {
       try {
         fs.unlinkSync(testDbPath + suffix);
