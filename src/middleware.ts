@@ -1,37 +1,57 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { checkRateLimit } from '@/lib/utils/rate-limit';
 
-/**
- * Guards the demo/simulator surface (`/api/simulator/*`) from being reachable
- * on a real production deployment.
- *
- * These routes exist to drive the buildathon demo dashboard — seeding data,
- * simulating a customer payment, injecting a simulated customer reply — and
- * none of them are authenticated (RA-02, RA-05). `/api/simulator/seed` in
- * particular truncates every table, including the append-only `audit_logs`.
- * That is an acceptable, explicitly-invoked reset button for a demo
- * environment and an unacceptable one for a deployment handling real
- * Razorpay traffic.
- *
- * Blocked whenever NODE_ENV === 'production', unless the deployment opts in
- * with RECOVERAI_DEMO_MODE=true (e.g. a hosted demo/judging environment that
- * is intentionally public and reset-able). Anything short of a production
- * build (local dev, CI, preview deployments) is left untouched so the
- * existing demo workflow keeps working with zero new required configuration.
- */
-export function middleware() {
-  const isProduction = process.env.NODE_ENV === 'production';
-  const demoModeOptIn = process.env.RECOVERAI_DEMO_MODE === 'true';
+// Reject oversized bodies before any parsing/hashing work happens (see
+// RA-20). This is a first-line check on the declared Content-Length, not a
+// substitute for a real streaming cap — a request omitting the header
+// (e.g. chunked transfer-encoding) isn't caught here.
+const MAX_BODY_BYTES = 64 * 1024;
 
-  if (isProduction && !demoModeOptIn) {
-    return NextResponse.json(
-      { success: false, error: { code: 'NOT_FOUND', message: 'Not found' } },
-      { status: 404 }
-    );
+export function middleware(req?: NextRequest): NextResponse {
+  if (req) {
+    const contentLength = Number(req.headers.get('content-length') ?? 0);
+    if (contentLength > MAX_BODY_BYTES) {
+      return NextResponse.json(
+        { success: false, error: { code: 'PAYLOAD_TOO_LARGE', message: 'Request body exceeds 64KB limit' } },
+        { status: 413 }
+      );
+    }
+
+    const ip =
+      req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+      req.headers.get('x-real-ip') ||
+      'unknown';
+
+    const { allowed, retryAfterSeconds } = checkRateLimit(ip);
+    if (!allowed) {
+      return NextResponse.json(
+        { success: false, error: { code: 'RATE_LIMITED', message: 'Too many requests' } },
+        { status: 429, headers: { 'Retry-After': String(retryAfterSeconds) } }
+      );
+    }
+  }
+
+  // Guards the demo/simulator surface (`/api/simulator/*`) from being reachable
+  // on a real production deployment (RA-02).
+  const isSimulatorRoute = !req || req.nextUrl.pathname.startsWith('/api/simulator');
+  if (isSimulatorRoute) {
+    const isProduction = process.env.NODE_ENV === 'production';
+    const demoModeOptIn = process.env.RECOVERAI_DEMO_MODE === 'true';
+
+    if (isProduction && !demoModeOptIn) {
+      return NextResponse.json(
+        { success: false, error: { code: 'NOT_FOUND', message: 'Not found' } },
+        { status: 404 }
+      );
+    }
   }
 
   return NextResponse.next();
 }
 
+export const proxy = middleware;
+
 export const config = {
-  matcher: '/api/simulator/:path*',
+  matcher: '/api/:path*',
 };
+
