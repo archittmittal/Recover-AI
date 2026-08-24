@@ -18,19 +18,37 @@ export async function POST(req: NextRequest) {
     const signature = req.headers.get('x-razorpay-signature') || '';
     const secret = process.env.RAZORPAY_WEBHOOK_SECRET || '';
 
-    // Signature verification (in production or when secret is set)
-    if (secret && !secret.includes('XXXXXXXX')) {
-      const isValid = verifyWebhookSignature(rawBody, signature, secret);
-      if (!isValid) {
-        return NextResponse.json(
-          { success: false, error: { code: 'INVALID_SIGNATURE', message: 'Invalid webhook signature' } },
-          { status: 400 }
-        );
-      }
+    // Signature verification is mandatory. A missing or placeholder secret is a
+    // deployment misconfiguration, not permission to skip verification (RA-01).
+    if (!secret || secret.includes('XXXXXXXX')) {
+      console.error('[webhook:razorpay] RAZORPAY_WEBHOOK_SECRET not configured — rejecting request');
+      return NextResponse.json(
+        { success: false, error: { code: 'NOT_CONFIGURED', message: 'Webhook secret not configured' } },
+        { status: 503 }
+      );
     }
 
-    const payload = JSON.parse(rawBody) as RazorpayWebhookPayload & { id?: string };
-    eventId = payload.id || `evt_${generateId('audit')}`;
+    const isValid = verifyWebhookSignature(rawBody, signature, secret);
+    if (!isValid) {
+      return NextResponse.json(
+        { success: false, error: { code: 'INVALID_SIGNATURE', message: 'Invalid webhook signature' } },
+        { status: 400 }
+      );
+    }
+
+    // Razorpay identifies each webhook delivery via the x-razorpay-event-id header,
+    // not a field in the JSON body (the body carries no top-level `id` at all — see
+    // RazorpayWebhookPayload). Relying on a body field that is never sent meant
+    // deduplication silently never matched (RA-04).
+    eventId = req.headers.get('x-razorpay-event-id') || undefined;
+    if (!eventId) {
+      return NextResponse.json(
+        { success: false, error: { code: 'MISSING_EVENT_ID', message: 'Missing x-razorpay-event-id header' } },
+        { status: 400 }
+      );
+    }
+
+    const payload = JSON.parse(rawBody) as RazorpayWebhookPayload;
     const payloadHash = computePayloadHash(rawBody);
     const nowStr = formatIST(getClock().now());
 

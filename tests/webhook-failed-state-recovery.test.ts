@@ -20,7 +20,19 @@ const { POST } = await import('../src/app/api/webhooks/razorpay/route');
  * event must actually reprocess it rather than being silently swallowed.
  */
 describe('POST /api/webhooks/razorpay — failed-state recovery & idempotency (RA-10)', () => {
+  const secret = 'ra10-test-secret';
+  const originalSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+
+  beforeAll(() => {
+    process.env.RAZORPAY_WEBHOOK_SECRET = secret;
+  });
+
   afterAll(() => {
+    if (originalSecret === undefined) {
+      delete process.env.RAZORPAY_WEBHOOK_SECRET;
+    } else {
+      process.env.RAZORPAY_WEBHOOK_SECRET = originalSecret;
+    }
     for (const suffix of ['', '-wal', '-shm']) {
       try {
         fs.unlinkSync(testDbPath + suffix);
@@ -29,6 +41,10 @@ describe('POST /api/webhooks/razorpay — failed-state recovery & idempotency (R
       }
     }
   });
+
+  function sign(body: string) {
+    return crypto.createHmac('sha256', secret).update(body).digest('hex');
+  }
 
   function buildBody(eventId: string, email: string, orderId: string) {
     return JSON.stringify({
@@ -60,10 +76,15 @@ describe('POST /api/webhooks/razorpay — failed-state recovery & idempotency (R
     });
   }
 
-  function buildRequest(body: string) {
+  function buildRequest(body: string, eventId?: string) {
+    const headers: Record<string, string> = {
+      'content-type': 'application/json',
+      'x-razorpay-signature': sign(body),
+    };
+    if (eventId) headers['x-razorpay-event-id'] = eventId;
     return new NextRequest('http://localhost/api/webhooks/razorpay', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers,
       body,
     });
   }
@@ -80,7 +101,7 @@ describe('POST /api/webhooks/razorpay — failed-state recovery & idempotency (R
       payload: { payment: { entity: { id: 'pay_broken', order_id: 'order_broken', amount: null } } },
     });
 
-    const res = await POST(buildRequest(body));
+    const res = await POST(buildRequest(body, eventId));
     expect(res.status).toBe(500);
 
     const [row] = await db.select().from(webhookEvents).where(eq(webhookEvents.id, eventId));
@@ -97,7 +118,7 @@ describe('POST /api/webhooks/razorpay — failed-state recovery & idempotency (R
       payload: { payment: { entity: { id: 'pay_broken2', order_id: 'order_broken2', amount: null } } },
     });
 
-    const firstRes = await POST(buildRequest(brokenBody));
+    const firstRes = await POST(buildRequest(brokenBody, eventId));
     expect(firstRes.status).toBe(500);
 
     const [failedRow] = await db.select().from(webhookEvents).where(eq(webhookEvents.id, eventId));
@@ -109,7 +130,7 @@ describe('POST /api/webhooks/razorpay — failed-state recovery & idempotency (R
     const email = `ra10-retry-${crypto.randomUUID()}@example.com`;
     const goodBody = buildBody(eventId, email, `order_${crypto.randomUUID()}`);
 
-    const secondRes = await POST(buildRequest(goodBody));
+    const secondRes = await POST(buildRequest(goodBody, eventId));
     expect(secondRes.status).toBe(200);
 
     const [processedRow] = await db.select().from(webhookEvents).where(eq(webhookEvents.id, eventId));
@@ -126,13 +147,13 @@ describe('POST /api/webhooks/razorpay — failed-state recovery & idempotency (R
     const email = `ra10-dup-${crypto.randomUUID()}@example.com`;
     const body = buildBody(eventId, email, `order_${crypto.randomUUID()}`);
 
-    const firstRes = await POST(buildRequest(body));
+    const firstRes = await POST(buildRequest(body, eventId));
     expect(firstRes.status).toBe(200);
 
     const journeysAfterFirst = await db.select().from(recoveryJourneys);
     const countAfterFirst = journeysAfterFirst.length;
 
-    const secondRes = await POST(buildRequest(body));
+    const secondRes = await POST(buildRequest(body, eventId));
     expect(secondRes.status).toBe(200);
     const secondJson = await secondRes.json();
     expect(secondJson.data.message).toMatch(/duplicate/i);
@@ -148,8 +169,8 @@ describe('POST /api/webhooks/razorpay — failed-state recovery & idempotency (R
     const body = buildBody(eventId, email, orderId);
 
     const [res1, res2] = await Promise.all([
-      POST(buildRequest(body)),
-      POST(buildRequest(body)),
+      POST(buildRequest(body, eventId)),
+      POST(buildRequest(body, eventId)),
     ]);
 
     const statuses = [res1.status, res2.status].sort();
