@@ -16,15 +16,22 @@ export async function POST(req: NextRequest) {
     const signature = req.headers.get('x-razorpay-signature') || '';
     const secret = process.env.RAZORPAY_WEBHOOK_SECRET || '';
 
-    // Signature verification (in production or when secret is set)
-    if (secret && !secret.includes('XXXXXXXX')) {
-      const isValid = verifyWebhookSignature(rawBody, signature, secret);
-      if (!isValid) {
-        return NextResponse.json(
-          { success: false, error: { code: 'INVALID_SIGNATURE', message: 'Invalid webhook signature' } },
-          { status: 400 }
-        );
-      }
+    // Signature verification is mandatory. A missing or placeholder secret is a
+    // deployment misconfiguration, not permission to skip verification (RA-01).
+    if (!secret || secret.includes('XXXXXXXX')) {
+      console.error('[webhook:razorpay] RAZORPAY_WEBHOOK_SECRET not configured — rejecting request');
+      return NextResponse.json(
+        { success: false, error: { code: 'NOT_CONFIGURED', message: 'Webhook secret not configured' } },
+        { status: 503 }
+      );
+    }
+
+    const isValid = verifyWebhookSignature(rawBody, signature, secret);
+    if (!isValid) {
+      return NextResponse.json(
+        { success: false, error: { code: 'INVALID_SIGNATURE', message: 'Invalid webhook signature' } },
+        { status: 400 }
+      );
     }
 
     // Razorpay identifies each webhook delivery via the x-razorpay-event-id header,
