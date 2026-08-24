@@ -1,5 +1,6 @@
 import { gemini } from './gemini';
 import { CONVERSATIONAL_REPLY_SYSTEM_PROMPT } from './prompts';
+import { sanitizePromptInput } from './sanitize';
 
 export interface ConversationInput {
   customerName: string;
@@ -59,8 +60,13 @@ export async function processCustomerConversation(
   }
 
   try {
+    // customerName traces back to attacker-influenceable input (e.g. a webhook
+    // payload's payment.notes.customer_name); contain it before it reaches the
+    // prompt (RA-03). customerMessage is left intact — it is the customer's own
+    // reply and the field this endpoint exists to interpret.
+    const safeCustomerName = sanitizePromptInput(input.customerName, 60);
     const userPrompt = `
-Customer "${input.customerName}" replied: "${input.customerMessage}"
+Customer "${safeCustomerName}" replied: "${input.customerMessage}"
 Amount: ${rupeeAmount}
 Original Link: ${input.paymentLinkUrl}
 Language: ${input.preferredLanguage || 'en'}
