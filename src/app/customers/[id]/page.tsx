@@ -21,8 +21,8 @@ import {
 interface CustomerProfile {
   id: string;
   name: string;
-  email: string;
-  phone: string;
+  email: string | null;
+  phone: string | null;
   preferredLanguage: string;
   segment: string;
   dndStatus: string;
@@ -208,11 +208,11 @@ export default function CustomerDetailPage() {
             <CardContent className="space-y-3 text-xs">
               <div className="flex justify-between py-1 border-b border-zinc-100 dark:border-zinc-800">
                 <span className="text-zinc-500">Phone</span>
-                <span className="font-mono font-medium">{customer.phone}</span>
+                <span className="font-mono font-medium">{customer.phone || '—'}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-zinc-100 dark:border-zinc-800">
                 <span className="text-zinc-500">Email</span>
-                <span className="font-mono font-medium truncate max-w-[160px]">{customer.email}</span>
+                <span className="font-mono font-medium truncate max-w-[160px]">{customer.email || '—'}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-zinc-100 dark:border-zinc-800">
                 <span className="text-zinc-500">Preferred Language</span>

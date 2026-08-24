@@ -2,6 +2,7 @@ import { db } from '../db';
 import { auditLogs } from '../db/schema';
 import { generateId } from './ids';
 import { getClock, formatIST } from './time';
+import { maskPiiDeep } from './pii';
 
 export type AuditActor = 'system' | 'agent' | 'customer' | 'razorpay';
 
@@ -27,7 +28,9 @@ export async function writeAuditLog(params: AuditLogParams): Promise<string> {
     actionId: params.actionId || null,
     actor: params.actor,
     eventType: params.eventType,
-    eventData: JSON.stringify(params.eventData),
+    // Phone/email values are masked before persisting (see RA-17); message
+    // content and other free text are stored as-is.
+    eventData: JSON.stringify(maskPiiDeep(params.eventData)),
     createdAt: nowStr,
   });
   
