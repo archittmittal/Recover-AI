@@ -22,6 +22,13 @@
       "when": 1787562694538,
       "tag": "0002_fresh_kronos",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1787563528846,
+      "tag": "0003_new_golden_guardian",
+      "breakpoints": true
     }
   ]
 }
