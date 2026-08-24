@@ -119,6 +119,9 @@ describe('Applied discount never exceeds the strategy ceiling (RA-15)', () => {
     const { journeyId } = await seedJourney('conversational');
 
     await recoveryCoordinator.processRecoveryAttempt(journeyId); // attempt 1, no discount
+
+    // Advance clock past the 2h backoff for conversational attempt 2 (still within daytime contact hours)
+    setClock(new FixedClock('2026-08-21T17:30:00+05:30'));
     await recoveryCoordinator.processRecoveryAttempt(journeyId); // attempt 2, discount applies
 
     const logs = await db.select().from(schema.auditLogs).where(eq(schema.auditLogs.journeyId, journeyId));
