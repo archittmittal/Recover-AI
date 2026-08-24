@@ -97,6 +97,12 @@ function initializeTables(sqlite: Database.Database) {
       received_at TEXT NOT NULL,
       processed_at TEXT
     );
+
+    CREATE INDEX IF NOT EXISTS idx_failures_customer ON payment_failures(customer_id);
+    CREATE INDEX IF NOT EXISTS idx_journeys_customer ON recovery_journeys(customer_id);
+    CREATE INDEX IF NOT EXISTS idx_journeys_failure ON recovery_journeys(failure_id);
+    CREATE INDEX IF NOT EXISTS idx_actions_journey ON recovery_actions(journey_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_journey ON audit_logs(journey_id);
   `);
 }
 
