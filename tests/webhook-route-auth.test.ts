@@ -19,10 +19,13 @@ describe('POST /api/webhooks/razorpay — signature enforcement', () => {
     }
   });
 
-  function buildRequest(body: string, signature?: string) {
+  function buildRequest(body: string, signature?: string, eventId?: string) {
+    const headers: Record<string, string> = {};
+    if (signature) headers['x-razorpay-signature'] = signature;
+    if (eventId) headers['x-razorpay-event-id'] = eventId;
     return new NextRequest('http://localhost/api/webhooks/razorpay', {
       method: 'POST',
-      headers: signature ? { 'x-razorpay-signature': signature } : {},
+      headers,
       body,
     });
   }
@@ -30,7 +33,7 @@ describe('POST /api/webhooks/razorpay — signature enforcement', () => {
   it('rejects with 503 when the webhook secret is unset', async () => {
     delete process.env.RAZORPAY_WEBHOOK_SECRET;
 
-    const res = await POST(buildRequest('{}', 'irrelevant'));
+    const res = await POST(buildRequest('{}', 'irrelevant', 'evt_test'));
     expect(res.status).toBe(503);
 
     const json = await res.json();
@@ -41,14 +44,14 @@ describe('POST /api/webhooks/razorpay — signature enforcement', () => {
   it('rejects with 503 when the webhook secret is still the placeholder', async () => {
     process.env.RAZORPAY_WEBHOOK_SECRET = 'XXXXXXXXXXXXXXXXXXXXXXXX';
 
-    const res = await POST(buildRequest('{}', 'irrelevant'));
+    const res = await POST(buildRequest('{}', 'irrelevant', 'evt_test'));
     expect(res.status).toBe(503);
   });
 
   it('rejects with 400 when the signature is missing', async () => {
     process.env.RAZORPAY_WEBHOOK_SECRET = 'a-real-test-secret';
 
-    const res = await POST(buildRequest('{}'));
+    const res = await POST(buildRequest('{}', undefined, 'evt_test'));
     expect(res.status).toBe(400);
 
     const json = await res.json();
@@ -58,7 +61,7 @@ describe('POST /api/webhooks/razorpay — signature enforcement', () => {
   it('rejects with 400 when the signature does not match the body', async () => {
     process.env.RAZORPAY_WEBHOOK_SECRET = 'a-real-test-secret';
 
-    const res = await POST(buildRequest('{"event":"payment.captured"}', 'not-a-valid-signature'));
+    const res = await POST(buildRequest('{"event":"payment.captured"}', 'not-a-valid-signature', 'evt_test'));
     expect(res.status).toBe(400);
   });
 
@@ -72,8 +75,9 @@ describe('POST /api/webhooks/razorpay — signature enforcement', () => {
       payload: {},
     });
     const signature = crypto.createHmac('sha256', secret).update(body).digest('hex');
+    const eventId = `evt_ra01_test_${crypto.randomUUID()}`;
 
-    const res = await POST(buildRequest(body, signature));
+    const res = await POST(buildRequest(body, signature, eventId));
     expect(res.status).toBe(200);
 
     const json = await res.json();
