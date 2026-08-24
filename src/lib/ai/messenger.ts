@@ -53,10 +53,13 @@ export async function generateRecoveryMessage(
 ): Promise<GeneratedMessageResult> {
   // The customer name traces back to attacker-influenceable input (e.g. a webhook
   // payload's payment.notes.customer_name). Strip newlines/control characters and
-  // cap length so it cannot be mistaken for prompt instructions (RA-03).
+  // cap length so it cannot be mistaken for prompt instructions (RA-03). Only the
+  // first name is kept — the full name is not data the LLM prompt needs, and
+  // SECURITY.md/ETHICAL_AI_FRAMEWORK.md both document first-name-only as the
+  // data minimization boundary for LLM prompts (RA-17).
   const params: MessageGenerationParams = {
     ...rawParams,
-    customerName: sanitizePromptInput(rawParams.customerName, 60),
+    customerName: sanitizePromptInput(rawParams.customerName, 60).split(' ')[0] || 'there',
   };
 
   const fallbackText = getTemplateFallbackMessage(params);

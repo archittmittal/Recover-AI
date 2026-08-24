@@ -47,7 +47,7 @@ export const STRATEGY_CONFIGS: Record<RecoveryStrategy, StrategyConfig> = {
     initialChannel: 'email',
     allowDiscount: false,
     maxDiscountPercentage: 0,
-    retryIntervalsHours: [24, 168, 336], // Day 1, Day 7, Day 14
+    retryIntervalsHours: [24, 168, 336], // each delay is relative to the previous attempt, not T+0: +24h, then +168h after that, then +336h after that
   },
   merchant_alert: {
     strategy: 'merchant_alert',

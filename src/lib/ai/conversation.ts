@@ -55,9 +55,11 @@ export async function processCustomerConversation(
   try {
     // customerName traces back to attacker-influenceable input (e.g. a webhook
     // payload's payment.notes.customer_name); contain it before it reaches the
-    // prompt (RA-03). customerMessage is left intact — it is the customer's own
+    // prompt (RA-03), and pass only the first name — the LLM prompt data
+    // minimization boundary documented in SECURITY.md/ETHICAL_AI_FRAMEWORK.md
+    // (RA-17). customerMessage is left intact — it is the customer's own
     // reply and the field this endpoint exists to interpret.
-    const safeCustomerName = sanitizePromptInput(input.customerName, 60);
+    const safeCustomerName = sanitizePromptInput(input.customerName, 60).split(' ')[0] || 'there';
     const userPrompt = `
 Customer "${safeCustomerName}" replied: "${input.customerMessage}"
 Amount: ${rupeeAmount}
