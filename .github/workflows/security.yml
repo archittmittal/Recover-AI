@@ -40,5 +40,4 @@ jobs:
           cache: 'npm'
 
       - name: Run npm Audit
-        run: npm audit --audit-level=critical
-        continue-on-error: true
+        run: npm audit --audit-level=high --omit=dev
