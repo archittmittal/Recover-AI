@@ -8,6 +8,27 @@
       "when": 1787290072100,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1787560398517,
+      "tag": "0001_green_lady_vermin",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787562694538,
+      "tag": "0002_fresh_kronos",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1787563528846,
+      "tag": "0003_new_golden_guardian",
+      "breakpoints": true
     }
   ]
 }

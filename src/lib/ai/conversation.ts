@@ -1,5 +1,7 @@
 import { gemini } from './gemini';
 import { CONVERSATIONAL_REPLY_SYSTEM_PROMPT } from './prompts';
+import { detectOptOut } from '../recovery/stopping-rules';
+import { sanitizePromptInput } from './sanitize';
 
 export interface ConversationInput {
   customerName: string;
@@ -21,18 +23,10 @@ export interface ConversationResponse {
 export async function processCustomerConversation(
   input: ConversationInput
 ): Promise<ConversationResponse> {
-  const text = input.customerMessage.trim().toLowerCase();
-
-  // 1. Fast deterministic check for hard opt-outs across English and Hindi/Hinglish
-  if (
-    text === 'stop' ||
-    text.includes('stop') ||
-    text.includes('unsubscribe') ||
-    text.includes('band karo') ||
-    text.includes('mat bhejo') ||
-    text.includes('mat karo') ||
-    text.includes('cancel')
-  ) {
+  // 1. Fast deterministic check for hard opt-outs across English and Hindi/Hinglish.
+  // Uses the same matcher as the deterministic stopping-rule engine so the two
+  // can never drift out of sync (see RA-08/RA-11).
+  if (detectOptOut(input.customerMessage)) {
     return {
       responseMessage: `You have been unsubscribed. No further messages will be sent. Thank you.`,
       intent: 'opt_out',
@@ -59,8 +53,15 @@ export async function processCustomerConversation(
   }
 
   try {
+    // customerName traces back to attacker-influenceable input (e.g. a webhook
+    // payload's payment.notes.customer_name); contain it before it reaches the
+    // prompt (RA-03), and pass only the first name — the LLM prompt data
+    // minimization boundary documented in SECURITY.md/ETHICAL_AI_FRAMEWORK.md
+    // (RA-17). customerMessage is left intact — it is the customer's own
+    // reply and the field this endpoint exists to interpret.
+    const safeCustomerName = sanitizePromptInput(input.customerName, 60).split(' ')[0] || 'there';
     const userPrompt = `
-Customer "${input.customerName}" replied: "${input.customerMessage}"
+Customer "${safeCustomerName}" replied: "${input.customerMessage}"
 Amount: ${rupeeAmount}
 Original Link: ${input.paymentLinkUrl}
 Language: ${input.preferredLanguage || 'en'}

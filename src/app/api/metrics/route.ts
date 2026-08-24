@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { customers, paymentFailures, recoveryJourneys, recoveryActions, auditLogs } from '@/lib/db/schema';
-import { desc } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,80 +36,101 @@ export interface StrategyMetric {
 
 export async function GET() {
   try {
-    const allCustomers = await db.select().from(customers);
-    const allFailures = await db.select().from(paymentFailures);
-    const allJourneys = await db.select().from(recoveryJourneys);
-    const allActions = await db.select().from(recoveryActions);
-    const recentAudits = await db
-      .select()
-      .from(auditLogs)
-      .orderBy(desc(auditLogs.createdAt))
-      .limit(10);
+    // Every aggregate below is computed with SQL SUM/COUNT/GROUP BY instead
+    // of loading full tables and reducing them in a JS loop (see RA-19).
 
-    const totalJourneys = allJourneys.length;
-    let totalAtRiskPaise = 0;
-    let totalRecoveredPaise = 0;
-    let resolvedCount = 0;
-    let activeCount = 0;
-    let exhaustedCount = 0;
-    let optedOutCount = 0;
-    let totalRecoveryDurationMs = 0;
-    let resolvedWithDurationCount = 0;
+    const [{ count: totalCustomers }] = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(customers);
+    const [{ count: totalFailures }] = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(paymentFailures);
 
-    for (const journey of allJourneys) {
-      totalAtRiskPaise += journey.amountAtRisk;
-      totalRecoveredPaise += journey.amountRecovered;
+    const [summary] = await db
+      .select({
+        totalJourneys: sql<number>`COUNT(*)`,
+        totalAtRiskPaise: sql<number>`COALESCE(SUM(${recoveryJourneys.amountAtRisk}), 0)`,
+        totalRecoveredPaise: sql<number>`COALESCE(SUM(${recoveryJourneys.amountRecovered}), 0)`,
+        resolvedCount: sql<number>`SUM(CASE WHEN ${recoveryJourneys.status} = 'resolved' THEN 1 ELSE 0 END)`,
+        exhaustedCount: sql<number>`SUM(CASE WHEN ${recoveryJourneys.status} = 'exhausted' THEN 1 ELSE 0 END)`,
+        optedOutCount: sql<number>`SUM(CASE WHEN ${recoveryJourneys.status} = 'opted_out' THEN 1 ELSE 0 END)`,
+        avgRecoveryDurationMinutes: sql<number | null>`
+          AVG(
+            CASE WHEN ${recoveryJourneys.status} = 'resolved'
+              AND ${recoveryJourneys.resolvedAt} IS NOT NULL
+              AND julianday(${recoveryJourneys.resolvedAt}) >= julianday(${recoveryJourneys.createdAt})
+            THEN (julianday(${recoveryJourneys.resolvedAt}) - julianday(${recoveryJourneys.createdAt})) * 24 * 60
+            ELSE NULL END
+          )
+        `,
+      })
+      .from(recoveryJourneys);
 
-      if (journey.status === 'resolved') {
-        resolvedCount++;
-        if (journey.resolvedAt && journey.createdAt) {
-          const start = new Date(journey.createdAt).getTime();
-          const end = new Date(journey.resolvedAt).getTime();
-          if (!isNaN(start) && !isNaN(end) && end >= start) {
-            totalRecoveryDurationMs += end - start;
-            resolvedWithDurationCount++;
-          }
-        }
-      } else if (journey.status === 'exhausted') {
-        exhaustedCount++;
-      } else if (journey.status === 'opted_out') {
-        optedOutCount++;
-      } else {
-        activeCount++;
-      }
-    }
+    const totalJourneys = summary?.totalJourneys ?? 0;
+    const totalAtRiskPaise = summary?.totalAtRiskPaise ?? 0;
+    const totalRecoveredPaise = summary?.totalRecoveredPaise ?? 0;
+    const resolvedCount = summary?.resolvedCount ?? 0;
+    const exhaustedCount = summary?.exhaustedCount ?? 0;
+    const optedOutCount = summary?.optedOutCount ?? 0;
+    const activeCount = totalJourneys - resolvedCount - exhaustedCount - optedOutCount;
 
     const recoveryRatePct =
-      totalAtRiskPaise > 0
-        ? Number(((totalRecoveredPaise / totalAtRiskPaise) * 100).toFixed(1))
-        : 0;
+      totalAtRiskPaise > 0 ? Number(((totalRecoveredPaise / totalAtRiskPaise) * 100).toFixed(1)) : 0;
 
     const optOutRatePct =
-      totalJourneys > 0
-        ? Number(((optedOutCount / totalJourneys) * 100).toFixed(1))
-        : 0;
+      totalJourneys > 0 ? Number(((optedOutCount / totalJourneys) * 100).toFixed(1)) : 0;
 
     const avgRecoveryTimeMinutes =
-      resolvedWithDurationCount > 0
-        ? Math.round(totalRecoveryDurationMs / resolvedWithDurationCount / (1000 * 60))
+      summary?.avgRecoveryDurationMinutes != null
+        ? Math.round(summary.avgRecoveryDurationMinutes)
         : 18; // realistic default average
 
-    // Channel Metrics Calculation
+    // Channel Metrics: attempt/delivery/conversion counts grouped in SQL.
     const channels: ('whatsapp' | 'sms' | 'voice' | 'email')[] = ['whatsapp', 'sms', 'voice', 'email'];
+
+    const channelCounts = await db
+      .select({
+        channel: recoveryActions.channel,
+        totalAttempts: sql<number>`COUNT(*)`,
+        deliveredCount: sql<number>`SUM(CASE WHEN ${recoveryActions.deliveryStatus} IN ('delivered', 'read') THEN 1 ELSE 0 END)`,
+        readCount: sql<number>`SUM(CASE WHEN ${recoveryActions.deliveryStatus} = 'read' THEN 1 ELSE 0 END)`,
+        recoveredCount: sql<number>`SUM(CASE WHEN ${recoveryActions.outcome} = 'payment_completed' THEN 1 ELSE 0 END)`,
+      })
+      .from(recoveryActions)
+      .groupBy(recoveryActions.channel);
+
+    // recoveredPaise attributes the recovered amount to the channel of the
+    // action that earned the conversion, summed once per distinct journey
+    // (a journey has at most one payment_completed action in practice, but
+    // this stays correct even if that ever changes).
+    const distinctRecoveredByChannel = db
+      .selectDistinct({
+        channel: recoveryActions.channel,
+        journeyId: recoveryActions.journeyId,
+      })
+      .from(recoveryActions)
+      .where(eq(recoveryActions.outcome, 'payment_completed'))
+      .as('distinct_recovered');
+
+    const channelRecoveredPaise = await db
+      .select({
+        channel: distinctRecoveredByChannel.channel,
+        recoveredPaise: sql<number>`COALESCE(SUM(${recoveryJourneys.amountRecovered}), 0)`,
+      })
+      .from(distinctRecoveredByChannel)
+      .leftJoin(recoveryJourneys, eq(recoveryJourneys.id, distinctRecoveredByChannel.journeyId))
+      .groupBy(distinctRecoveredByChannel.channel);
+
+    const channelCountsMap = new Map(channelCounts.map((c) => [c.channel, c]));
+    const channelRecoveredPaiseMap = new Map(channelRecoveredPaise.map((c) => [c.channel, c.recoveredPaise]));
+
     const channelMetrics: ChannelMetric[] = channels.map((chan) => {
-      const actionsForChan = allActions.filter((a) => a.channel === chan);
-      const totalAttempts = actionsForChan.length;
-      const deliveredCount = actionsForChan.filter((a) => a.deliveryStatus === 'delivered' || a.deliveryStatus === 'read').length;
-      const readCount = actionsForChan.filter((a) => a.deliveryStatus === 'read').length;
-      const recoveredActions = actionsForChan.filter((a) => a.outcome === 'payment_completed');
-      const recoveredCount = recoveredActions.length;
-      
-      const journeyIds = new Set(recoveredActions.map((a) => a.journeyId));
-      let recoveredPaise = 0;
-      for (const jId of journeyIds) {
-        const j = allJourneys.find((item) => item.id === jId);
-        if (j) recoveredPaise += j.amountRecovered;
-      }
+      const counts = channelCountsMap.get(chan);
+      const totalAttempts = counts?.totalAttempts ?? 0;
+      const deliveredCount = counts?.deliveredCount ?? 0;
+      const readCount = counts?.readCount ?? 0;
+      const recoveredCount = counts?.recoveredCount ?? 0;
+      const recoveredPaise = channelRecoveredPaiseMap.get(chan) ?? 0;
 
       const conversionRatePct =
         totalAttempts > 0 ? Number(((recoveredCount / totalAttempts) * 100).toFixed(1)) : 0;
@@ -130,31 +151,32 @@ export async function GET() {
     });
 
     // Failure Type Breakdown
-    const failureTypeMap: Record<string, { count: number; atRisk: number; recovered: number; name: string }> = {
-      one_time: { count: 0, atRisk: 0, recovered: 0, name: 'One-Time Payment' },
-      subscription: { count: 0, atRisk: 0, recovered: 0, name: 'Subscription Renewal' },
-      mandate: { count: 0, atRisk: 0, recovered: 0, name: 'e-Mandate / SI' },
-      invoice: { count: 0, atRisk: 0, recovered: 0, name: 'B2B Invoice' },
+    const failureTypeDisplayMap: Record<string, string> = {
+      one_time: 'One-Time Payment',
+      subscription: 'Subscription Renewal',
+      mandate: 'e-Mandate / SI',
+      invoice: 'B2B Invoice',
     };
 
-    for (const journey of allJourneys) {
-      const failure = allFailures.find((f) => f.id === journey.failureId);
-      const fType = failure?.failureType || 'one_time';
-      if (!failureTypeMap[fType]) {
-        failureTypeMap[fType] = { count: 0, atRisk: 0, recovered: 0, name: fType };
-      }
-      failureTypeMap[fType].count++;
-      failureTypeMap[fType].atRisk += journey.amountAtRisk;
-      failureTypeMap[fType].recovered += journey.amountRecovered;
-    }
+    const failureTypeExpr = sql<string>`COALESCE(${paymentFailures.failureType}, 'one_time')`;
+    const failureTypeAgg = await db
+      .select({
+        failureType: failureTypeExpr,
+        count: sql<number>`COUNT(*)`,
+        atRiskPaise: sql<number>`COALESCE(SUM(${recoveryJourneys.amountAtRisk}), 0)`,
+        recoveredPaise: sql<number>`COALESCE(SUM(${recoveryJourneys.amountRecovered}), 0)`,
+      })
+      .from(recoveryJourneys)
+      .leftJoin(paymentFailures, eq(paymentFailures.id, recoveryJourneys.failureId))
+      .groupBy(failureTypeExpr);
 
-    const failureTypeMetrics: FailureTypeMetric[] = Object.entries(failureTypeMap).map(([type, data]) => ({
-      type,
-      displayName: data.name,
-      count: data.count,
-      atRiskPaise: data.atRisk,
-      recoveredPaise: data.recovered,
-      recoveryRatePct: data.atRisk > 0 ? Number(((data.recovered / data.atRisk) * 100).toFixed(1)) : 0,
+    const failureTypeMetrics: FailureTypeMetric[] = failureTypeAgg.map((row) => ({
+      type: row.failureType,
+      displayName: failureTypeDisplayMap[row.failureType] || row.failureType,
+      count: row.count,
+      atRiskPaise: row.atRiskPaise,
+      recoveredPaise: row.recoveredPaise,
+      recoveryRatePct: row.atRiskPaise > 0 ? Number(((row.recoveredPaise / row.atRiskPaise) * 100).toFixed(1)) : 0,
     }));
 
     // Strategy Metrics Breakdown
@@ -166,25 +188,31 @@ export async function GET() {
       merchant_alert: 'Merchant Ops Alert',
     };
 
-    const strategyMap: Record<string, { count: number; atRisk: number; recovered: number }> = {};
-    for (const journey of allJourneys) {
-      const strat = journey.strategy || 'payment_link';
-      if (!strategyMap[strat]) {
-        strategyMap[strat] = { count: 0, atRisk: 0, recovered: 0 };
-      }
-      strategyMap[strat].count++;
-      strategyMap[strat].atRisk += journey.amountAtRisk;
-      strategyMap[strat].recovered += journey.amountRecovered;
-    }
+    const strategyExpr = sql<string>`COALESCE(${recoveryJourneys.strategy}, 'payment_link')`;
+    const strategyAgg = await db
+      .select({
+        strategy: strategyExpr,
+        count: sql<number>`COUNT(*)`,
+        atRiskPaise: sql<number>`COALESCE(SUM(${recoveryJourneys.amountAtRisk}), 0)`,
+        recoveredPaise: sql<number>`COALESCE(SUM(${recoveryJourneys.amountRecovered}), 0)`,
+      })
+      .from(recoveryJourneys)
+      .groupBy(strategyExpr);
 
-    const strategyMetrics: StrategyMetric[] = Object.entries(strategyMap).map(([strat, data]) => ({
-      strategy: strat,
-      displayName: strategyDisplayMap[strat] || strat,
-      count: data.count,
-      atRiskPaise: data.atRisk,
-      recoveredPaise: data.recovered,
-      recoveryRatePct: data.atRisk > 0 ? Number(((data.recovered / data.atRisk) * 100).toFixed(1)) : 0,
+    const strategyMetrics: StrategyMetric[] = strategyAgg.map((row) => ({
+      strategy: row.strategy,
+      displayName: strategyDisplayMap[row.strategy] || row.strategy,
+      count: row.count,
+      atRiskPaise: row.atRiskPaise,
+      recoveredPaise: row.recoveredPaise,
+      recoveryRatePct: row.atRiskPaise > 0 ? Number(((row.recoveredPaise / row.atRiskPaise) * 100).toFixed(1)) : 0,
     }));
+
+    const recentAudits = await db
+      .select()
+      .from(auditLogs)
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(10);
 
     const baselineArmARate = 0;
     const baselineArmBRate = 31.5;
@@ -195,8 +223,8 @@ export async function GET() {
       success: true,
       data: {
         summary: {
-          totalCustomers: allCustomers.length,
-          totalFailures: allFailures.length,
+          totalCustomers,
+          totalFailures,
           totalJourneys,
           totalAtRiskPaise,
           totalRecoveredPaise,
