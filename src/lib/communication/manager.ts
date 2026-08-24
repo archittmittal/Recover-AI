@@ -63,3 +63,38 @@ export class CommunicationManager {
 }
 
 export const communicationManager = new CommunicationManager();
+
+export interface NormalizedDispatchResult {
+  deliveryStatus: 'sent' | 'delivered' | 'failed';
+  providerMessageId: string;
+  succeeded: boolean;
+}
+
+/**
+ * Reduces the per-channel DispatchResult union to the fields the
+ * recovery_actions row actually needs, so callers don't need to branch on
+ * channel-specific shapes (voice reports callId/callStatus, the others
+ * report messageId/deliveryStatus/status).
+ */
+export function normalizeDispatchResult(result: DispatchResult): NormalizedDispatchResult {
+  if (result.channel === 'voice') {
+    const succeeded = result.callStatus === 'completed';
+    return {
+      deliveryStatus: succeeded ? 'delivered' : 'failed',
+      providerMessageId: result.callId,
+      succeeded,
+    };
+  }
+
+  const succeeded = result.status === 'success';
+  // Defensive clamp: providers are expected to only ever report 'sent' at
+  // dispatch time (see RA-12); 'read' would only be valid arriving later
+  // through a status-callback path this manager does not yet implement.
+  const rawStatus = result.deliveryStatus === 'read' ? 'delivered' : result.deliveryStatus;
+
+  return {
+    deliveryStatus: succeeded ? rawStatus : 'failed',
+    providerMessageId: result.messageId,
+    succeeded,
+  };
+}

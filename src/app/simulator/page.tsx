@@ -102,7 +102,7 @@ function SimulatorContent() {
   const filteredCustomers = customers.filter(
     (c) =>
       c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.phone.includes(searchQuery) ||
+      (c.phone ?? '').includes(searchQuery) ||
       c.errorReason.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
