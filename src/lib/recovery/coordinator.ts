@@ -339,8 +339,8 @@ export class RecoveryCoordinator {
     // instead of hardcoding deliveryStatus (see RA-12).
     const dispatch = await communicationManager.dispatch({
       channel,
-      toPhone: customer.phone || undefined,
-      toEmail: customer.email || undefined,
+      toPhone: customer.phone!,
+      toEmail: customer.email ?? undefined,
       customerName: customer.name,
       messageText: messageResult.message,
       paymentLinkUrl: paymentUrl,
