@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import crypto from 'crypto';
 import fs from 'fs';
 import { verifyWebhookSignature, computePayloadHash } from '../src/lib/razorpay/webhooks';
@@ -19,33 +19,35 @@ describe('Webhook Signature Verification & Payload Hashing', () => {
   const secret = 'rzp_wh_secret_test_1234567890';
   const samplePayload = JSON.stringify({
     entity: 'event',
+    account_id: 'acc_test',
     event: 'payment.failed',
-    id: 'evt_test_123',
-    payload: { payment: { entity: { id: 'pay_123', amount: 499900 } } },
+    contains: ['payment'],
+    payload: { payment: { entity: { id: 'pay_123', amount: 50000 } } },
   });
 
-  it('validates genuine HMAC-SHA256 signature using timing-safe comparison', () => {
-    const validSignature = crypto
-      .createHmac('sha256', secret)
-      .update(samplePayload)
-      .digest('hex');
-
+  it('correctly verifies a valid HMAC-SHA256 signature', () => {
+    const validSignature = crypto.createHmac('sha256', secret).update(samplePayload).digest('hex');
     const isValid = verifyWebhookSignature(samplePayload, validSignature, secret);
     expect(isValid).toBe(true);
   });
 
-  it('rejects tampered body or invalid signature safely', () => {
-    const validSignature = crypto
-      .createHmac('sha256', secret)
+  it('rejects a signature generated with the wrong secret', () => {
+    const invalidSignature = crypto
+      .createHmac('sha256', 'wrong_secret_key_000000000000')
       .update(samplePayload)
       .digest('hex');
+    const isValid = verifyWebhookSignature(samplePayload, invalidSignature, secret);
+    expect(isValid).toBe(false);
+  });
 
-    const tamperedPayload = samplePayload.replace('499900', '100');
+  it('rejects a signature with a tampered body payload', () => {
+    const validSignature = crypto.createHmac('sha256', secret).update(samplePayload).digest('hex');
+    const tamperedPayload = samplePayload.replace('50000', '99999');
     const isValid = verifyWebhookSignature(tamperedPayload, validSignature, secret);
     expect(isValid).toBe(false);
   });
 
-  it('computes deterministic payload hash for idempotency deduplication', () => {
+  it('computes deterministic SHA-256 hash of the payload body', () => {
     const hash1 = computePayloadHash(samplePayload);
     const hash2 = computePayloadHash(samplePayload);
     const hashDifferent = computePayloadHash(samplePayload + ' ');
@@ -57,7 +59,19 @@ describe('Webhook Signature Verification & Payload Hashing', () => {
 });
 
 describe('Webhook route — replay deduplication (RA-18: exercises the real handler)', () => {
+  const secret = 'rzp_wh_secret_test_1234567890';
+  const originalSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+
+  beforeAll(() => {
+    process.env.RAZORPAY_WEBHOOK_SECRET = secret;
+  });
+
   afterAll(() => {
+    if (originalSecret === undefined) {
+      delete process.env.RAZORPAY_WEBHOOK_SECRET;
+    } else {
+      process.env.RAZORPAY_WEBHOOK_SECRET = originalSecret;
+    }
     for (const suffix of ['', '-wal', '-shm']) {
       try {
         fs.unlinkSync(testDbPath + suffix);
@@ -66,6 +80,22 @@ describe('Webhook route — replay deduplication (RA-18: exercises the real hand
       }
     }
   });
+
+  function sign(body: string) {
+    return crypto.createHmac('sha256', secret).update(body).digest('hex');
+  }
+
+  function sendWebhook(payload: unknown, eventId: string) {
+    const rawBody = JSON.stringify(payload);
+    return POST(
+      buildJsonRequest('http://localhost/api/webhooks/razorpay', rawBody, {
+        headers: {
+          'x-razorpay-signature': sign(rawBody),
+          'x-razorpay-event-id': eventId,
+        },
+      })
+    );
+  }
 
   function buildPayload(eventId: string, email: string, orderId: string) {
     return {
@@ -99,10 +129,10 @@ describe('Webhook route — replay deduplication (RA-18: exercises the real hand
     const orderId = `order_${crypto.randomUUID()}`;
     const payload = buildPayload(eventId, email, orderId);
 
-    const firstRes = await POST(buildJsonRequest('http://localhost/api/webhooks/razorpay', payload));
+    const firstRes = await sendWebhook(payload, eventId);
     expect(firstRes.status).toBe(200);
 
-    const secondRes = await POST(buildJsonRequest('http://localhost/api/webhooks/razorpay', payload));
+    const secondRes = await sendWebhook(payload, eventId);
     expect(secondRes.status).toBe(200);
     const secondJson = await secondRes.json();
     expect(secondJson.data.message).toMatch(/duplicate/i);
@@ -128,12 +158,12 @@ describe('Webhook route — replay deduplication (RA-18: exercises the real hand
 
     const eventA = `evt_distinct_a_${crypto.randomUUID()}`;
     const orderA = `order_a_${crypto.randomUUID()}`;
-    const resA = await POST(buildJsonRequest('http://localhost/api/webhooks/razorpay', buildPayload(eventA, email, orderA)));
+    const resA = await sendWebhook(buildPayload(eventA, email, orderA), eventA);
     expect(resA.status).toBe(200);
 
     const eventB = `evt_distinct_b_${crypto.randomUUID()}`;
     const orderB = `order_b_${crypto.randomUUID()}`;
-    const resB = await POST(buildJsonRequest('http://localhost/api/webhooks/razorpay', buildPayload(eventB, email, orderB)));
+    const resB = await sendWebhook(buildPayload(eventB, email, orderB), eventB);
     expect(resB.status).toBe(200);
 
     const failures = await db.select().from(paymentFailures).where(eq(paymentFailures.razorpayOrderId, orderA));

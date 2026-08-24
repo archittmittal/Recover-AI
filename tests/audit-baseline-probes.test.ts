@@ -45,7 +45,7 @@ afterAll(() => {
 });
 
 describe('RA-01 baseline: unsigned webhook requests must be rejected', () => {
-  it.fails('rejects a webhook POST with no signature header (4xx) — xfail until RA-01 merges', async () => {
+  it('rejects a webhook POST with no signature header (4xx) — xfail until RA-01 merges', async () => {
     const payload = {
       entity: 'event',
       event: 'payment.failed',
@@ -60,7 +60,7 @@ describe('RA-01 baseline: unsigned webhook requests must be rejected', () => {
 });
 
 describe('RA-06 baseline: recovery attempts must not dispatch outside contact hours', () => {
-  it.fails('dispatches zero recovery_actions when run at 03:00 IST — xfail until RA-06 merges', async () => {
+  it('dispatches zero recovery_actions when run at 03:00 IST — xfail until RA-06 merges', async () => {
     setClock(new FixedClock('2026-08-21T03:00:00+05:30'));
     const nowStr = formatIST(getClock().now());
 
@@ -124,7 +124,7 @@ describe('RA-06 baseline: recovery attempts must not dispatch outside contact ho
 });
 
 describe('RA-09 baseline: resolving a journey twice must not double-count revenue', () => {
-  it.fails('leaves totalRecoveredAmount unchanged on the second resolveJourneyWithPayment call — xfail until RA-09 merges', async () => {
+  it('leaves totalRecoveredAmount unchanged on the second resolveJourneyWithPayment call — xfail until RA-09 merges', async () => {
     setClock(new FixedClock('2026-08-21T14:30:00+05:30'));
     const nowStr = formatIST(getClock().now());
 
