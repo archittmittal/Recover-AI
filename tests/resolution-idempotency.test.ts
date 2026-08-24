@@ -28,7 +28,7 @@ async function seedJourney(amountAtRisk: number) {
   await db.insert(schema.customers).values({
     id: customerId,
     name: 'Priya Desai',
-    email: 'priya@example.com',
+    email: `priya-${customerId}@example.com`,
     phone: '+919800000000',
     preferredLanguage: 'en',
     segment: 'b2c',
