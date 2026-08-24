@@ -45,7 +45,8 @@ afterAll(() => {
 });
 
 describe('RA-01 baseline: unsigned webhook requests must be rejected', () => {
-  it('rejects a webhook POST with no signature header (4xx) — xfail until RA-01 merges', async () => {
+  it('rejects a webhook POST with no signature header (4xx)', async () => {
+    process.env.RAZORPAY_WEBHOOK_SECRET = 'a-real-test-secret';
     const payload = {
       entity: 'event',
       event: 'payment.failed',
@@ -54,8 +55,7 @@ describe('RA-01 baseline: unsigned webhook requests must be rejected', () => {
     };
 
     const res = await POST(buildJsonRequest('http://localhost/api/webhooks/razorpay', payload));
-    expect(res.status).toBeGreaterThanOrEqual(400);
-    expect(res.status).toBeLessThan(500);
+    expect(res.status).toBe(400);
   });
 });
 
