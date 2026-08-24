@@ -43,6 +43,11 @@ describe('RecoverAI End-to-End Autonomous Workflow Smoke Suite', () => {
     expect(journeys[0].currentAttempt).toBe(1);
     expect(journeys[0].status).toBe('recovering');
 
+    // Attempt 2 is gated behind the strategy's configured retry backoff
+    // (retryIntervalsHours) — advance the clock well past the longest
+    // interval any strategy declares (72h) before the next attempt is due.
+    setClock(new FixedClock(new Date(Date.parse('2026-08-21T14:30:00+05:30') + 73 * 60 * 60 * 1000)));
+
     // Executing next attempt advances to Attempt 2 (SMS Escalation)
     await recoveryCoordinator.processRecoveryAttempt(journeyId);
 
@@ -62,6 +67,10 @@ describe('RecoverAI End-to-End Autonomous Workflow Smoke Suite', () => {
     expect(actions.length).toBe(2);
     expect(actions[0].attemptNumber).toBe(1);
     expect(actions[1].attemptNumber).toBe(2);
+
+    // Restore the shared clock so later tests in this file see the original
+    // daytime timestamp rather than the 73h jump made above.
+    setClock(new FixedClock('2026-08-21T14:30:00+05:30'));
   });
 
   it('3. Resolves journey when customer completes payment via link', async () => {
