@@ -3,9 +3,10 @@ import { relations } from 'drizzle-orm';
 
 export const customers = sqliteTable('customers', {
   id: text('id').primaryKey(), // prefix: cust_
+  razorpayCustomerId: text('razorpay_customer_id').unique(), // Razorpay's own customer id, when known
   name: text('name').notNull(),
-  email: text('email').notNull(),
-  phone: text('phone').notNull(),
+  email: text('email').unique(), // nullable: not every payment carries one
+  phone: text('phone'), // nullable: never fabricate a contact number (RA-16)
   preferredLanguage: text('preferred_language').notNull(), // 'en' | 'hi' | 'hinglish'
   segment: text('segment').notNull(), // 'b2c' | 'b2b'
   totalFailures: integer('total_failures').notNull().default(0),
@@ -38,7 +39,7 @@ export const recoveryJourneys = sqliteTable('recovery_journeys', {
   id: text('id').primaryKey(), // prefix: rj_
   customerId: text('customer_id').notNull().references(() => customers.id),
   failureId: text('failure_id').notNull().references(() => paymentFailures.id),
-  status: text('status').notNull(), // 'detected' | 'diagnosing' | 'recovering' | 'escalating' | 'resolved' | 'exhausted' | 'opted_out'
+  status: text('status').notNull(), // 'detected' | 'diagnosing' | 'recovering' | 'escalating' | 'resolved' | 'exhausted' | 'opted_out' | 'uncontactable'
   strategy: text('strategy').notNull(), // 'smart_retry' | 'payment_link' | 'conversational' | 'invoice_reminder'
   amountAtRisk: integer('amount_at_risk').notNull(), // paise
   amountRecovered: integer('amount_recovered').notNull().default(0), // paise

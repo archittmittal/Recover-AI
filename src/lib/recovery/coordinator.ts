@@ -119,6 +119,56 @@ export class RecoveryCoordinator {
   }
 
   /**
+   * Creates a terminal, non-dispatching journey for a failure whose
+   * customer has no usable contact detail (no razorpay_customer_id, no
+   * phone, no email). Never fabricates contact details to force outreach
+   * through the normal pipeline (see RA-16).
+   */
+  async createUncontactableJourney(failureId: string): Promise<string> {
+    const failureList = await db
+      .select()
+      .from(paymentFailures)
+      .where(eq(paymentFailures.id, failureId))
+      .limit(1);
+
+    if (failureList.length === 0) {
+      throw new Error(`Payment failure not found: ${failureId}`);
+    }
+
+    const failure = failureList[0];
+    const journeyId = generateId('rj');
+    const nowStr = formatIST(getClock().now());
+
+    await db.insert(recoveryJourneys).values({
+      id: journeyId,
+      customerId: failure.customerId,
+      failureId: failure.id,
+      status: 'uncontactable',
+      strategy: 'merchant_alert',
+      amountAtRisk: failure.amount,
+      amountRecovered: 0,
+      maxAttempts: 0,
+      currentAttempt: 0,
+      currentChannel: null,
+      createdAt: nowStr,
+      updatedAt: nowStr,
+    });
+
+    await writeAuditLog({
+      journeyId,
+      actor: 'system',
+      eventType: 'journey_uncontactable',
+      eventData: {
+        failureId: failure.id,
+        amount: failure.amount,
+        reason: 'no_razorpay_customer_id_email_or_phone',
+      },
+    });
+
+    return journeyId;
+  }
+
+  /**
    * Executes the next recovery outreach attempt in the journey lifecycle.
    */
   async processRecoveryAttempt(journeyId: string): Promise<void> {
@@ -132,7 +182,12 @@ export class RecoveryCoordinator {
     const journey = journeyList[0];
 
     // If journey is already closed, do nothing
-    if (journey.status === 'resolved' || journey.status === 'opted_out' || journey.status === 'exhausted') {
+    if (
+      journey.status === 'resolved' ||
+      journey.status === 'opted_out' ||
+      journey.status === 'exhausted' ||
+      journey.status === 'uncontactable'
+    ) {
       return;
     }
 
@@ -162,6 +217,25 @@ export class RecoveryCoordinator {
 
     if (customerList.length === 0) return;
     const customer = customerList[0];
+
+    // Defense in depth: never dispatch to a customer with no usable phone
+    // number, even if this journey wasn't created via the uncontactable
+    // path (see RA-16). No hardcoded fallback contact is invented here.
+    if (!customer.phone) {
+      await writeAuditLog({
+        journeyId,
+        actor: 'system',
+        eventType: 'attempt_aborted',
+        eventData: { reason: 'customer_uncontactable' },
+      });
+      if (journey.status !== 'uncontactable') {
+        await db
+          .update(recoveryJourneys)
+          .set({ status: 'uncontactable', updatedAt: formatIST(getClock().now()) })
+          .where(eq(recoveryJourneys.id, journeyId));
+      }
+      return;
+    }
 
     // Check stopping rules before making an attempt. The 8AM-7PM IST contact
     // window (RBI Fair Practices Code) is enforced here, not skipped — tests
@@ -226,7 +300,7 @@ export class RecoveryCoordinator {
         description: `Payment recovery attempt #${nextAttempt}`,
         customer: {
           name: customer.name,
-          email: customer.email,
+          email: customer.email ?? undefined,
           contact: customer.phone,
         },
       });
@@ -265,8 +339,8 @@ export class RecoveryCoordinator {
     // instead of hardcoding deliveryStatus (see RA-12).
     const dispatch = await communicationManager.dispatch({
       channel,
-      toPhone: customer.phone,
-      toEmail: customer.email,
+      toPhone: customer.phone!,
+      toEmail: customer.email ?? undefined,
       customerName: customer.name,
       messageText: messageResult.message,
       paymentLinkUrl: paymentUrl,

@@ -7,6 +7,7 @@ import { RazorpayWebhookPayload } from '@/lib/razorpay/types';
 import { recoveryCoordinator } from '@/lib/recovery/coordinator';
 import { generateId } from '@/lib/utils/ids';
 import { formatIST, getClock } from '@/lib/utils/time';
+import { normalizePhoneE164 } from '@/lib/utils/phone';
 
 export const dynamic = 'force-dynamic';
 
@@ -113,23 +114,74 @@ export async function POST(req: NextRequest) {
     if (payload.event === 'payment.failed' && payload.payload.payment) {
       const payment = payload.payload.payment.entity;
 
-      // Find or create customer
-      let customerId: string;
-      const existingCustomer = await db
-        .select()
-        .from(customers)
-        .where(eq(customers.email, payment.email || 'customer@example.com'))
-        .limit(1);
+      // Resolve customer identity without fabricating contact details
+      // (see RA-16). Priority: Razorpay's own customer id, then a
+      // normalized phone number, then — only if neither is available — a
+      // distinct, unlinked record whose journey is marked uncontactable.
+      const razorpayCustomerId = payment.customer_id || null;
+      const normalizedContact = normalizePhoneE164(payment.contact);
+      const email = payment.email || null;
 
-      if (existingCustomer.length > 0) {
-        customerId = existingCustomer[0].id;
+      let customerId: string;
+      let isUncontactable = false;
+
+      if (razorpayCustomerId) {
+        const existing = await db
+          .select()
+          .from(customers)
+          .where(eq(customers.razorpayCustomerId, razorpayCustomerId))
+          .limit(1);
+        customerId = existing.length > 0 ? existing[0].id : generateId('cust');
+        if (existing.length === 0) {
+          await db.insert(customers).values({
+            id: customerId,
+            razorpayCustomerId,
+            name: payment.notes?.customer_name || 'Customer',
+            email,
+            phone: normalizedContact,
+            preferredLanguage: 'en',
+            segment: 'b2c',
+            totalFailures: 1,
+            totalRecoveredAmount: 0,
+            dndStatus: 'active',
+            createdAt: nowStr,
+            updatedAt: nowStr,
+          });
+        }
+      } else if (normalizedContact) {
+        const existing = await db
+          .select()
+          .from(customers)
+          .where(eq(customers.phone, normalizedContact))
+          .limit(1);
+        customerId = existing.length > 0 ? existing[0].id : generateId('cust');
+        if (existing.length === 0) {
+          await db.insert(customers).values({
+            id: customerId,
+            razorpayCustomerId: null,
+            name: payment.notes?.customer_name || 'Customer',
+            email,
+            phone: normalizedContact,
+            preferredLanguage: 'en',
+            segment: 'b2c',
+            totalFailures: 1,
+            totalRecoveredAmount: 0,
+            dndStatus: 'active',
+            createdAt: nowStr,
+            updatedAt: nowStr,
+          });
+        }
       } else {
+        // No usable identity: create a distinct unlinked record instead of
+        // collapsing into a shared placeholder row.
         customerId = generateId('cust');
+        isUncontactable = true;
         await db.insert(customers).values({
           id: customerId,
+          razorpayCustomerId: null,
           name: payment.notes?.customer_name || 'Customer',
-          email: payment.email || 'customer@example.com',
-          phone: payment.contact || '+919876543210',
+          email,
+          phone: null,
           preferredLanguage: 'en',
           segment: 'b2c',
           totalFailures: 1,
@@ -160,8 +212,13 @@ export async function POST(req: NextRequest) {
         createdAt: nowStr,
       });
 
-      // Trigger recovery coordinator
-      await recoveryCoordinator.startRecoveryJourney(failureId);
+      // Trigger recovery coordinator, or mark the journey uncontactable
+      // without ever attempting to dispatch outreach.
+      if (isUncontactable) {
+        await recoveryCoordinator.createUncontactableJourney(failureId);
+      } else {
+        await recoveryCoordinator.startRecoveryJourney(failureId);
+      }
     }
 
     // Mark webhook as processed

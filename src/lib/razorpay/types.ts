@@ -55,6 +55,7 @@ export interface RazorpayPaymentEntity {
   method: RazorpayPaymentMethod | string;
   email?: string;
   contact?: string;
+  customer_id?: string; // cust_xxxx, present when the payment is linked to a saved Razorpay customer
   error_code?: RazorpayErrorCode | string;
   error_description?: string;
   error_source?: RazorpayErrorSource | string;
@@ -147,7 +148,7 @@ export interface CreatePaymentLinkRequest {
   description?: string;
   customer: {
     name: string;
-    email: string;
+    email?: string;
     contact: string;
   };
   notify?: {

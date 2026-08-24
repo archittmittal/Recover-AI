@@ -13,9 +13,10 @@ function initializeTables(sqlite: Database.Database) {
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS customers (
       id TEXT PRIMARY KEY,
+      razorpay_customer_id TEXT UNIQUE,
       name TEXT NOT NULL,
-      email TEXT NOT NULL,
-      phone TEXT NOT NULL,
+      email TEXT UNIQUE,
+      phone TEXT,
       preferred_language TEXT NOT NULL,
       segment TEXT NOT NULL,
       total_failures INTEGER NOT NULL DEFAULT 0,

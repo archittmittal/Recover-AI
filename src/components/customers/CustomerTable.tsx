@@ -35,8 +35,8 @@ interface CustomerTableProps {
 interface CustomerProfileDetail {
   id: string;
   name: string;
-  email: string;
-  phone: string;
+  email: string | null;
+  phone: string | null;
   preferredLanguage: string;
   segment: string;
   dndStatus: string;
@@ -56,7 +56,7 @@ export function CustomerTable({ customers }: CustomerTableProps) {
   const filteredCustomers = customers.filter((item) => {
     const matchesSearch =
       item.name.toLowerCase().includes(search.toLowerCase()) ||
-      item.email.toLowerCase().includes(search.toLowerCase()) ||
+      (item.email ?? '').toLowerCase().includes(search.toLowerCase()) ||
       item.errorReason.toLowerCase().includes(search.toLowerCase()) ||
       item.id.toLowerCase().includes(search.toLowerCase());
 

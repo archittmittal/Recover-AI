@@ -20,7 +20,7 @@ import {
 export interface SimCustomer {
   id: string;
   name: string;
-  phone: string;
+  phone: string | null;
   preferredLanguage: string;
 }
 
@@ -211,7 +211,7 @@ export function CustomerSimulator({
               {journey && <JourneyStatusBadge status={journey.status} />}
             </CardTitle>
             <CardDescription className="text-xs text-zinc-500 mt-0.5">
-              Phone: {customer.phone} • Language: {customer.preferredLanguage.toUpperCase()} • Attempt: {journey?.currentAttempt || 0}/{journey?.maxAttempts || 3}
+              Phone: {customer.phone || 'Not on file'} • Language: {customer.preferredLanguage.toUpperCase()} • Attempt: {journey?.currentAttempt || 0}/{journey?.maxAttempts || 3}
             </CardDescription>
           </div>
 

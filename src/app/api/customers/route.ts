@@ -7,8 +7,8 @@ export const dynamic = 'force-dynamic';
 export interface CustomerListItem {
   id: string;
   name: string;
-  email: string;
-  phone: string;
+  email: string | null;
+  phone: string | null;
   preferredLanguage: string;
   segment: string;
   dndStatus: string;
@@ -80,8 +80,8 @@ export async function GET(req: NextRequest) {
       items = items.filter(
         (item) =>
           item.name.toLowerCase().includes(search) ||
-          item.email.toLowerCase().includes(search) ||
-          item.phone.toLowerCase().includes(search) ||
+          (item.email ?? '').toLowerCase().includes(search) ||
+          (item.phone ?? '').toLowerCase().includes(search) ||
           item.errorReason.toLowerCase().includes(search) ||
           item.id.toLowerCase().includes(search)
       );
