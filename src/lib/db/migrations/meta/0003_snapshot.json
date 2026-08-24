@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "236add26-43bc-4793-ba08-472afcfa38c2",
-  "prevId": "35b01353-e95a-46f7-b649-42579a5f530c",
+  "id": "b4bb1816-1f7f-4428-b80c-512c019ee7a9",
+  "prevId": "a22d5fe5-cde5-407a-91d6-5b1aa7cfcbc6",
   "tables": {
     "audit_logs": {
       "name": "audit_logs",
@@ -57,7 +57,15 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "idx_audit_journey": {
+          "name": "idx_audit_journey",
+          "columns": [
+            "journey_id"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "audit_logs_journey_id_recovery_journeys_id_fk": {
           "name": "audit_logs_journey_id_recovery_journeys_id_fk",
@@ -100,6 +108,13 @@
           "notNull": true,
           "autoincrement": false
         },
+        "razorpay_customer_id": {
+          "name": "razorpay_customer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "name": {
           "name": "name",
           "type": "text",
@@ -111,14 +126,14 @@
           "name": "email",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "phone": {
           "name": "phone",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "preferred_language": {
@@ -174,7 +189,22 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "customers_razorpay_customer_id_unique": {
+          "name": "customers_razorpay_customer_id_unique",
+          "columns": [
+            "razorpay_customer_id"
+          ],
+          "isUnique": true
+        },
+        "customers_email_unique": {
+          "name": "customers_email_unique",
+          "columns": [
+            "email"
+          ],
+          "isUnique": true
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -297,7 +327,15 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "idx_failures_customer": {
+          "name": "idx_failures_customer",
+          "columns": [
+            "customer_id"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "payment_failures_customer_id_customers_id_fk": {
           "name": "payment_failures_customer_id_customers_id_fk",
@@ -419,7 +457,15 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "idx_actions_journey": {
+          "name": "idx_actions_journey",
+          "columns": [
+            "journey_id"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "recovery_actions_journey_id_recovery_journeys_id_fk": {
           "name": "recovery_actions_journey_id_recovery_journeys_id_fk",
@@ -551,7 +597,22 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "idx_journeys_customer": {
+          "name": "idx_journeys_customer",
+          "columns": [
+            "customer_id"
+          ],
+          "isUnique": false
+        },
+        "idx_journeys_failure": {
+          "name": "idx_journeys_failure",
+          "columns": [
+            "failure_id"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "recovery_journeys_customer_id_customers_id_fk": {
           "name": "recovery_journeys_customer_id_customers_id_fk",

@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "236add26-43bc-4793-ba08-472afcfa38c2",
-  "prevId": "35b01353-e95a-46f7-b649-42579a5f530c",
+  "id": "a22d5fe5-cde5-407a-91d6-5b1aa7cfcbc6",
+  "prevId": "236add26-43bc-4793-ba08-472afcfa38c2",
   "tables": {
     "audit_logs": {
       "name": "audit_logs",
@@ -100,6 +100,13 @@
           "notNull": true,
           "autoincrement": false
         },
+        "razorpay_customer_id": {
+          "name": "razorpay_customer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "name": {
           "name": "name",
           "type": "text",
@@ -111,14 +118,14 @@
           "name": "email",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "phone": {
           "name": "phone",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "preferred_language": {
@@ -174,7 +181,22 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "customers_razorpay_customer_id_unique": {
+          "name": "customers_razorpay_customer_id_unique",
+          "columns": [
+            "razorpay_customer_id"
+          ],
+          "isUnique": true
+        },
+        "customers_email_unique": {
+          "name": "customers_email_unique",
+          "columns": [
+            "email"
+          ],
+          "isUnique": true
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},

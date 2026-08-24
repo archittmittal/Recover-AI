@@ -8,8 +8,8 @@ export const dynamic = 'force-dynamic';
 export interface CustomerListItem {
   id: string;
   name: string;
-  email: string;
-  phone: string;
+  email: string | null;
+  phone: string | null;
   preferredLanguage: string;
   segment: string;
   dndStatus: string;
@@ -51,7 +51,6 @@ export async function GET(req: NextRequest) {
     // below via an indexed IN-list lookup instead of a join, so that case
     // isn't dropped while still avoiding a full-table scan.
     const conditions: SQL[] = [];
-
     if (statusFilter && statusFilter !== 'all') {
       if (statusFilter === 'exceptions') {
         conditions.push(or(eq(recoveryJourneys.status, 'exhausted'), eq(recoveryJourneys.status, 'opted_out'))!);
