@@ -162,13 +162,15 @@ export class RecoveryCoordinator {
     if (customerList.length === 0) return;
     const customer = customerList[0];
 
-    // Check stopping rules before making an attempt
+    // Check stopping rules before making an attempt. The 8AM-7PM IST contact
+    // window (RBI Fair Practices Code) is enforced here, not skipped — tests
+    // that need to dispatch outreach set a daytime FixedClock instead (RA-06).
     const stoppingCheck = evaluateStoppingRules({
       journeyStatus: journey.status,
       currentAttempt: journey.currentAttempt,
       maxAttempts: journey.maxAttempts,
       customerDndStatus: customer.dndStatus,
-      checkContactHours: false, // In batch simulation/tests we simulate scheduled execution
+      checkContactHours: true,
     });
 
     const now = getClock().now();
@@ -180,18 +182,23 @@ export class RecoveryCoordinator {
           .update(recoveryJourneys)
           .set({ status: stoppingCheck.nextStatus, updatedAt: nowStr })
           .where(eq(recoveryJourneys.id, journeyId));
-
-        await writeAuditLog({
-          journeyId,
-          actor: 'agent',
-          eventType: 'stopping_rule_triggered',
-          eventData: {
-            rule: stoppingCheck.ruleFired,
-            reason: stoppingCheck.reason,
-            newStatus: stoppingCheck.nextStatus,
-          },
-        });
       }
+
+      // Log every fired stopping rule, not only ones that change the status label.
+      // The contact-hours rule's nextStatus ('recovering') is the same string as
+      // the journey's current status while deferred, so gating the log on a
+      // status change silently dropped the audit trail for every deferred
+      // attempt (RA-06) — the one place that record matters most.
+      await writeAuditLog({
+        journeyId,
+        actor: 'agent',
+        eventType: 'stopping_rule_triggered',
+        eventData: {
+          rule: stoppingCheck.ruleFired,
+          reason: stoppingCheck.reason,
+          newStatus: stoppingCheck.nextStatus,
+        },
+      });
       return;
     }
 
