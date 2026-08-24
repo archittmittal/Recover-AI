@@ -1,5 +1,6 @@
 import { gemini } from './gemini';
 import { MESSAGE_GENERATION_SYSTEM_PROMPT } from './prompts';
+import { sanitizePromptInput } from './sanitize';
 
 export interface MessageGenerationParams {
   customerName: string;
@@ -48,8 +49,16 @@ function getTemplateFallbackMessage(params: MessageGenerationParams): string {
  * Generates an empathetic, channel-appropriate recovery message using Gemini with template fallback.
  */
 export async function generateRecoveryMessage(
-  params: MessageGenerationParams
+  rawParams: MessageGenerationParams
 ): Promise<GeneratedMessageResult> {
+  // The customer name traces back to attacker-influenceable input (e.g. a webhook
+  // payload's payment.notes.customer_name). Strip newlines/control characters and
+  // cap length so it cannot be mistaken for prompt instructions (RA-03).
+  const params: MessageGenerationParams = {
+    ...rawParams,
+    customerName: sanitizePromptInput(rawParams.customerName, 60),
+  };
+
   const fallbackText = getTemplateFallbackMessage(params);
   const model = gemini.getModel();
 
@@ -90,8 +99,17 @@ ${params.discountPercentage ? `- Discount Offered: ${params.discountPercentage}%
       const charLimit = params.channel === 'sms' ? 180 : 350;
       const cleanMessage = parsed.message.trim();
 
-      // Verify that the message includes the payment link and isn't truncated
-      if (cleanMessage.length <= charLimit && cleanMessage.includes('http')) {
+      // Enforce the invariants the system prompt declares fixed: the payment link
+      // and amount must survive verbatim, and no other URL may be present. A
+      // substring check like `.includes('http')` is satisfied by ANY url —
+      // including one an attacker substituted via an injected instruction
+      // (e.g. through an unsanitized customerName) — so it does not actually
+      // verify the real link made it through (RA-03).
+      const urlsInMessage = cleanMessage.match(/https?:\/\/\S+/g) ?? [];
+      const linkIntact = urlsInMessage.length === 1 && urlsInMessage[0] === params.paymentLinkUrl;
+      const amountIntact = cleanMessage.includes(rupeeAmount);
+
+      if (cleanMessage.length <= charLimit && linkIntact && amountIntact) {
         return {
           message: cleanMessage,
           llmReasoning: parsed.reasoning || 'Personalized empathetic copy generated via Gemini 2.5 Flash.',
