@@ -184,9 +184,13 @@ export class RecoveryCoordinator {
     ) as RecoveryStrategy;
     const channel = getChannelForAttempt(strategy, nextAttempt);
 
-    // Generate Razorpay Payment Link
-    let paymentUrl = `https://rzp.io/i/recov_${journey.id}`;
-    let paymentLinkId = journey.paymentLinkId;
+    // Generate Razorpay Payment Link. A failure here must abort the attempt
+    // rather than degrade to a fabricated URL: a customer sent a dead link
+    // burns one of three attempts for nothing (see RA-14). Skipped attempts
+    // are recoverable on the next sweep; a spent attempt with a broken link
+    // is not.
+    let paymentUrl: string;
+    let paymentLinkId: string | null;
 
     try {
       const plink = await razorpayClient.createPaymentLink({
@@ -203,7 +207,18 @@ export class RecoveryCoordinator {
       paymentUrl = plink.short_url;
       paymentLinkId = plink.id;
     } catch (error) {
-      console.warn('[RecoveryCoordinator] Payment link generation fallback:', error);
+      console.warn('[RecoveryCoordinator] Payment link generation failed, aborting attempt:', error);
+      await writeAuditLog({
+        journeyId,
+        actor: 'system',
+        eventType: 'attempt_aborted',
+        eventData: {
+          reason: 'payment_link_unavailable',
+          attemptNumber: nextAttempt,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+      return;
     }
 
     // Generate personalized message via LLM

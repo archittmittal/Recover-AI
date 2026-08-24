@@ -4,6 +4,7 @@ import { customers, recoveryJourneys, recoveryActions } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { processCustomerConversation } from '@/lib/ai/conversation';
 import { recoveryCoordinator } from '@/lib/recovery/coordinator';
+import { razorpayClient } from '@/lib/razorpay/client';
 import { generateId } from '@/lib/utils/ids';
 import { formatIST, getClock } from '@/lib/utils/time';
 import { writeAuditLog } from '@/lib/utils/audit';
@@ -45,8 +46,18 @@ export async function POST(req: NextRequest) {
     // 1. Process customer message through coordinator (handles stopping rules like STOP)
     await recoveryCoordinator.handleCustomerResponse(journey.id, message);
 
-    // 2. Generate contextual response via conversational agent
-    const paymentUrl = `https://rzp.io/i/recov_${journey.id}`;
+    // 2. Generate contextual response via conversational agent, resolving
+    // the real payment link short URL instead of a fabricated one (RA-14).
+    let paymentUrl = '';
+    if (journey.paymentLinkId) {
+      try {
+        const plink = await razorpayClient.getPaymentLink(journey.paymentLinkId);
+        paymentUrl = plink.short_url;
+      } catch (error) {
+        console.warn('[POST /api/simulator/reply] Failed to resolve payment link:', error);
+      }
+    }
+
     const conversationResult = await processCustomerConversation({
       customerName: customer?.name || 'Customer',
       customerMessage: message,
