@@ -1,4 +1,5 @@
 import { drizzle, BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import Database from 'better-sqlite3';
 import * as schema from './schema';
 import path from 'path';
@@ -9,103 +10,89 @@ const globalForDb = globalThis as unknown as {
   db: BetterSQLite3Database<typeof schema> | undefined;
 };
 
-function initializeTables(sqlite: Database.Database) {
+const MIGRATIONS_FOLDER = path.join(process.cwd(), 'src/lib/db/migrations');
+const MIGRATIONS_TABLE = '__drizzle_migrations';
+
+// Journal timestamps from meta/_journal.json, ascending. Used to stamp how far a
+// pre-migration database already got.
+const GEN_0001 = 1787560398517; // tables exist, pre-razorpay_customer_id
+const GEN_0002 = 1787562694538; // customers.razorpay_customer_id added
+const GEN_0003 = 1787563528846; // idx_* performance indexes added
+
+/**
+ * Databases created before migrations became the single source of truth were built by an
+ * inline `CREATE TABLE IF NOT EXISTS` block that lived in this file. They carry real tables
+ * but no migration ledger, so Drizzle would try to replay `0000_init` against them and fail
+ * on an already-existing table.
+ *
+ * Drizzle selects migrations by comparing each journal entry's `when` against the newest
+ * `created_at` in the ledger, so adopting such a database is a matter of writing one row that
+ * marks how far it already got. Detection reads the schema itself rather than trusting a
+ * version marker the old code never wrote.
+ *
+ * Returns the journal timestamp to stamp, or null when the database is fresh and every
+ * migration should run normally.
+ */
+function detectLegacyGeneration(sqlite: Database.Database): number | null {
+  const hasTable = (name: string): boolean =>
+    sqlite
+      .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`)
+      .get(name) !== undefined;
+
+  // No application tables at all: a fresh database, nothing to adopt.
+  if (!hasTable('customers')) return null;
+
+  // Already has a ledger: Drizzle can take it from here.
+  if (hasTable(MIGRATIONS_TABLE)) return null;
+
+  const hasColumn = (table: string, column: string): boolean =>
+    (sqlite.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some(
+      (c) => c.name === column
+    );
+
+  // Generation is read from columns only. Index presence is deliberately NOT used as
+  // evidence: the retired inline DDL created the idx_* indexes from its first version,
+  // independently of migration 0003, so a legacy database can carry those indexes while
+  // still missing the 0002 column. Treating an index as proof of generation skips 0002 and
+  // leaves the database permanently stale — the exact failure this adoption path exists to
+  // repair.
+  return hasColumn('customers', 'razorpay_customer_id') ? GEN_0002 : GEN_0001;
+}
+
+/**
+ * Migration 0003 issues bare `CREATE INDEX` statements, which fail if the index already
+ * exists. A legacy database built by the inline DDL carries these indexes without having run
+ * 0003, so they are dropped before the stamp and recreated by the migration. Indexes are
+ * derived data — dropping them loses nothing.
+ */
+function clearIndexesCreatedAfter(sqlite: Database.Database, generation: number): void {
+  if (generation >= GEN_0003) return;
+  const created = [
+    'idx_audit_journey',
+    'idx_failures_customer',
+    'idx_actions_journey',
+    'idx_journeys_customer',
+    'idx_journeys_failure',
+  ];
+  for (const name of created) {
+    sqlite.exec(`DROP INDEX IF EXISTS ${name}`);
+  }
+}
+
+function stampLegacyGeneration(sqlite: Database.Database, when: number): void {
   sqlite.exec(`
-    CREATE TABLE IF NOT EXISTS customers (
-      id TEXT PRIMARY KEY,
-      razorpay_customer_id TEXT UNIQUE,
-      name TEXT NOT NULL,
-      email TEXT UNIQUE,
-      phone TEXT,
-      preferred_language TEXT NOT NULL,
-      segment TEXT NOT NULL,
-      total_failures INTEGER NOT NULL DEFAULT 0,
-      total_recovered_amount INTEGER NOT NULL DEFAULT 0,
-      dnd_status TEXT NOT NULL DEFAULT 'active',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS payment_failures (
-      id TEXT PRIMARY KEY,
-      customer_id TEXT NOT NULL REFERENCES customers(id),
-      razorpay_payment_id TEXT NOT NULL,
-      razorpay_order_id TEXT NOT NULL,
-      razorpay_subscription_id TEXT,
-      razorpay_invoice_id TEXT,
-      amount INTEGER NOT NULL,
-      currency TEXT NOT NULL DEFAULT 'INR',
-      payment_method TEXT NOT NULL,
-      failure_type TEXT NOT NULL,
-      error_code TEXT NOT NULL,
-      error_source TEXT NOT NULL,
-      error_step TEXT NOT NULL,
-      error_reason TEXT NOT NULL,
-      error_description TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS recovery_journeys (
-      id TEXT PRIMARY KEY,
-      customer_id TEXT NOT NULL REFERENCES customers(id),
-      failure_id TEXT NOT NULL REFERENCES payment_failures(id),
-      status TEXT NOT NULL,
-      strategy TEXT NOT NULL,
-      amount_at_risk INTEGER NOT NULL,
-      amount_recovered INTEGER NOT NULL DEFAULT 0,
-      recovery_payment_id TEXT,
-      payment_link_id TEXT,
-      max_attempts INTEGER NOT NULL DEFAULT 3,
-      current_attempt INTEGER NOT NULL DEFAULT 0,
-      current_channel TEXT,
-      resolved_at TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS recovery_actions (
-      id TEXT PRIMARY KEY,
-      journey_id TEXT NOT NULL REFERENCES recovery_journeys(id),
-      attempt_number INTEGER NOT NULL,
-      channel TEXT NOT NULL,
-      action_type TEXT NOT NULL,
-      message_content TEXT NOT NULL,
-      llm_reasoning TEXT,
-      delivery_status TEXT NOT NULL,
-      provider_message_id TEXT,
-      customer_response TEXT,
-      outcome TEXT NOT NULL,
-      scheduled_at TEXT NOT NULL,
-      executed_at TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS audit_logs (
-      id TEXT PRIMARY KEY,
-      journey_id TEXT NOT NULL REFERENCES recovery_journeys(id),
-      action_id TEXT REFERENCES recovery_actions(id),
-      actor TEXT NOT NULL,
-      event_type TEXT NOT NULL,
-      event_data TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS webhook_events (
-      id TEXT PRIMARY KEY,
-      event_type TEXT NOT NULL,
-      payload_hash TEXT NOT NULL,
-      processing_status TEXT NOT NULL,
-      error_message TEXT,
-      received_at TEXT NOT NULL,
-      processed_at TEXT
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_failures_customer ON payment_failures(customer_id);
-    CREATE INDEX IF NOT EXISTS idx_journeys_customer ON recovery_journeys(customer_id);
-    CREATE INDEX IF NOT EXISTS idx_journeys_failure ON recovery_journeys(failure_id);
-    CREATE INDEX IF NOT EXISTS idx_actions_journey ON recovery_actions(journey_id);
-    CREATE INDEX IF NOT EXISTS idx_audit_journey ON audit_logs(journey_id);
+    CREATE TABLE IF NOT EXISTS ${MIGRATIONS_TABLE} (
+      id SERIAL PRIMARY KEY,
+      hash text NOT NULL,
+      created_at numeric
+    )
   `);
+  sqlite
+    .prepare(`INSERT INTO ${MIGRATIONS_TABLE} ("hash", "created_at") VALUES (?, ?)`)
+    .run('legacy-inline-ddl-adoption', when);
+  console.warn(
+    `[db] Adopted a pre-migration database (generation ${when}); pending migrations will now apply.`
+  );
 }
 
 function getOrCreateDb(): BetterSQLite3Database<typeof schema> {
@@ -114,6 +101,12 @@ function getOrCreateDb(): BetterSQLite3Database<typeof schema> {
   }
 
   const dbUrl = process.env.DATABASE_URL || 'file:./data/recoverai.db';
+  if (!dbUrl.startsWith('file:')) {
+    throw new Error(
+      `[db] Unsupported DATABASE_URL scheme: "${dbUrl.split(':')[0]}:". ` +
+        `This build targets better-sqlite3 and accepts only "file:" URLs.`
+    );
+  }
   const dbPath = dbUrl.replace(/^file:/, '');
   const dbDir = path.dirname(dbPath);
 
@@ -125,12 +118,20 @@ function getOrCreateDb(): BetterSQLite3Database<typeof schema> {
   sqlite.pragma('journal_mode = WAL');
   sqlite.pragma('foreign_keys = ON');
 
-  // Initialize tables idempotently
-  initializeTables(sqlite);
-
-  globalForDb.sqlite = sqlite;
+  const legacyGeneration = detectLegacyGeneration(sqlite);
+  if (legacyGeneration !== null) {
+    clearIndexesCreatedAfter(sqlite, legacyGeneration);
+    stampLegacyGeneration(sqlite, legacyGeneration);
+  }
 
   const dbInstance = drizzle(sqlite, { schema });
+
+  // Migrations are the single source of schema truth. Applying them on connect keeps the
+  // zero-config promise (no separate `db:migrate` step) while letting an existing database
+  // actually converge, which `CREATE TABLE IF NOT EXISTS` could never do.
+  migrate(dbInstance, { migrationsFolder: MIGRATIONS_FOLDER });
+
+  globalForDb.sqlite = sqlite;
   globalForDb.db = dbInstance;
 
   return dbInstance;
