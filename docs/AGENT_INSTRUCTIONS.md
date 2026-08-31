@@ -358,7 +358,7 @@ When starting a new coding session on RecoverAI, the agent should:
 | Styling | Tailwind + shadcn/ui | Production-quality with minimal code |
 | Database | SQLite via better-sqlite3 | Zero-config, portable, judge-friendly |
 | ORM | Drizzle | Type-safe, lightweight, SQLite-native |
-| LLM | Google Gemini (gemini-2.5-flash) | Fast, cheap, good JSON mode |
+| LLM | Google Gemini (gemini-3.6-flash) | Fast, cheap, good JSON mode |
 | ID generation | nanoid with prefixes | `cust_`, `fail_`, `rj_`, `ra_`, `audit_` |
 | Amounts | Integer (paise) | Razorpay convention, no float errors |
 | Timestamps | ISO 8601 strings in IST | Human-readable, consistent |
