@@ -150,7 +150,7 @@ Full reasoning in [`docs/PROJECT_DOCUMENTATION.md`](docs/PROJECT_DOCUMENTATION.m
 | Styling | Tailwind CSS, shadcn/ui |
 | Database | SQLite via `better-sqlite3` |
 | ORM | Drizzle ORM |
-| AI / LLM | Google Gemini API (`gemini-2.5-flash`) |
+| AI / LLM | Google Gemini API (`gemini-3.6-flash`, set via `GEMINI_MODEL`) |
 | Charts | Recharts |
 | Payments | Razorpay APIs, test mode — Payment Links, Invoices, Subscriptions, Webhooks |
 

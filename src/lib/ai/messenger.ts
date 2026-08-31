@@ -1,4 +1,5 @@
 import { gemini } from './gemini';
+import { getGeminiModel } from '../config';
 import { MESSAGE_GENERATION_SYSTEM_PROMPT } from './prompts';
 import { sanitizePromptInput } from './sanitize';
 
@@ -43,6 +44,28 @@ function getTemplateFallbackMessage(params: MessageGenerationParams): string {
   }
 
   return `Hello ${name}! 👋\n\nWe noticed your recent payment of ${rupeeAmount} didn't go through. You can easily complete your payment using this secure link:\n👉 ${params.paymentLinkUrl}\n\nFeel free to reply if you need any assistance!\nReply STOP to unsubscribe.`;
+}
+
+/**
+ * True if `text` contains anything a messaging client would turn into a tappable target.
+ *
+ * Deliberately broad: a false positive costs a personalised message (the deterministic
+ * template ships instead), while a false negative ships an attacker-chosen payment target to
+ * a real customer. The asymmetry decides the tuning.
+ */
+export function containsActionableTarget(text: string): boolean {
+  const patterns: RegExp[] = [
+    // Any explicit scheme with an authority: https://, upi://, intent://, javascript: ...
+    /[a-z][a-z0-9+.-]*:\/\//i,
+    // Actionable schemes that carry no "//"
+    /\b(?:tel|mailto|sms|smsto|upi|whatsapp|intent|market|geo|data|javascript|file|ftp|bitcoin|ethereum):/i,
+    // Bare or www-prefixed domains: wa.me/x, evil.example/pay, www.rzp-secure.example.
+    // The final label must be 2+ letters, so "₹2,499.00", "e.g." and "i.e." do not match.
+    /\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,24}\b/i,
+    // UPI virtual payment address: name@bank. Not a URL, but it is a payment target.
+    /\b[a-z0-9._-]{2,}@[a-z][a-z0-9.-]{1,}\b/i,
+  ];
+  return patterns.some((re) => re.test(text));
 }
 
 /**
@@ -108,14 +131,23 @@ ${params.discountPercentage ? `- Discount Offered: ${params.discountPercentage}%
       // including one an attacker substituted via an injected instruction
       // (e.g. through an unsanitized customerName) — so it does not actually
       // verify the real link made it through (RA-03).
-      const urlsInMessage = cleanMessage.match(/https?:\/\/\S+/g) ?? [];
-      const linkIntact = urlsInMessage.length === 1 && urlsInMessage[0] === params.paymentLinkUrl;
+      // Only the payment link may be actionable. Enumerating bad schemes is a blocklist and
+      // loses to the next one, so instead the known-good link is removed and ANYTHING
+      // link-shaped left behind rejects the message.
+      //
+      // The previous check matched `https?://` alone, which let a message ship carrying
+      // `upi://pay?pa=fraud@okaxis&am=2499` (opens a UPI app pre-filled to an attacker's VPA),
+      // `tel:`, `wa.me/...`, or a bare `evil.example/pay` that WhatsApp linkifies anyway.
+      const remainder = cleanMessage.split(params.paymentLinkUrl).join(' ');
+      const linkIntact =
+        cleanMessage.includes(params.paymentLinkUrl) && !containsActionableTarget(remainder);
+
       const amountIntact = cleanMessage.includes(rupeeAmount);
 
       if (cleanMessage.length <= charLimit && linkIntact && amountIntact) {
         return {
           message: cleanMessage,
-          llmReasoning: parsed.reasoning || 'Personalized empathetic copy generated via Gemini 2.5 Flash.',
+          llmReasoning: parsed.reasoning || `Personalized empathetic copy generated via ${getGeminiModel()}.`,
           isTemplateFallback: false,
         };
       }
