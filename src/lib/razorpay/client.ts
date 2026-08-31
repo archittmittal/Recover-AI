@@ -5,6 +5,7 @@ import {
   RazorpaySubscriptionEntity,
 } from './types';
 import { nanoid } from 'nanoid';
+import { isLive, requireCredential } from '../config';
 
 export class RazorpayClient {
   private keyId: string;
@@ -12,8 +13,8 @@ export class RazorpayClient {
   private baseUrl: string;
 
   constructor() {
-    this.keyId = process.env.RAZORPAY_KEY_ID || '';
-    this.keySecret = process.env.RAZORPAY_KEY_SECRET || '';
+    this.keyId = requireCredential('RAZORPAY_KEY_ID') || '';
+    this.keySecret = requireCredential('RAZORPAY_KEY_SECRET') || '';
     this.baseUrl = 'https://api.razorpay.com/v1';
   }
 
@@ -22,13 +23,13 @@ export class RazorpayClient {
     return `Basic ${auth}`;
   }
 
+  /**
+   * Mock mode is declared via RECOVERAI_MODE, not inferred from the shape of a credential.
+   * In live mode requireCredential() has already thrown if either value is absent, so the
+   * remaining check is only a defensive guard.
+   */
   private isMockMode(): boolean {
-    return (
-      !this.keyId ||
-      !this.keySecret ||
-      this.keyId.includes('XXXXXXXX') ||
-      this.keyId.includes('mock')
-    );
+    return !isLive() || !this.keyId || !this.keySecret;
   }
 
   /**

@@ -761,7 +761,7 @@ Two rules that are easy to get wrong and must be enforced in review:
 
 **Google Gemini API** (via `@google/generative-ai` SDK)
 
-**Model:** `gemini-2.5-flash` — optimized for speed and cost while maintaining strong reasoning for classification and message generation tasks.
+**Model:** `gemini-3.6-flash` — optimized for speed and cost while maintaining strong reasoning for classification and message generation tasks. Configured via `GEMINI_MODEL` and pinned rather than a floating `-latest` alias, so the model cannot change under a recorded demo. The previously hardcoded `gemini-2.5-flash` was retired for new API keys, which silently routed every message to the deterministic template fallback (RA-24).
 
 ### 8.2 LLM Use Cases
 

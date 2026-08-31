@@ -8,7 +8,7 @@ This document outlines the explicit architectural boundary between **where we us
 
 ---
 
-## 1. Where We Use AI (Google Gemini 2.5 Flash)
+## 1. Where We Use AI (Google Gemini 3.6 Flash)
 
 ```mermaid
 graph TD
@@ -68,7 +68,7 @@ If Google Gemini API is unavailable (network outage, rate limits, unconfigured k
 ```mermaid
 graph LR
     Req["Message Generation / Classification"] --> Check{"Gemini Available?"}
-    Check -->|Yes| LLM["Gemini 2.5 Flash Output"]
+    Check -->|Yes| LLM["Gemini 3.6 Flash Output"]
     Check -->|No / Timeout / Error| Fallback["Pre-Compiled Template Fallback"]
     Fallback --> Out["Sanitized Outreach with Mandatory STOP Notice"]
 ```
