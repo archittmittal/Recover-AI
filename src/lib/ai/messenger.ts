@@ -1,4 +1,5 @@
 import { gemini } from './gemini';
+import { getGeminiModel } from '../config';
 import { MESSAGE_GENERATION_SYSTEM_PROMPT } from './prompts';
 import { sanitizePromptInput } from './sanitize';
 
@@ -108,14 +109,21 @@ ${params.discountPercentage ? `- Discount Offered: ${params.discountPercentage}%
       // including one an attacker substituted via an injected instruction
       // (e.g. through an unsanitized customerName) — so it does not actually
       // verify the real link made it through (RA-03).
-      const urlsInMessage = cleanMessage.match(/https?:\/\/\S+/g) ?? [];
+      // `\S+` is greedy, so a link ending a sentence captures its trailing punctuation
+      // ("...9GwL7PG." !== "...9GwL7PG") and a perfectly good message is discarded. Trim
+      // characters that cannot terminate a URL in prose before comparing. This does not
+      // weaken the RA-03 check: the comparison is still full equality against the expected
+      // link, and the count must still be exactly one, so a substituted host cannot pass.
+      const urlsInMessage = (cleanMessage.match(/https?:\/\/\S+/g) ?? []).map((u: string) =>
+        u.replace(/[.,;:!?)\]}'"]+$/, '')
+      );
       const linkIntact = urlsInMessage.length === 1 && urlsInMessage[0] === params.paymentLinkUrl;
       const amountIntact = cleanMessage.includes(rupeeAmount);
 
       if (cleanMessage.length <= charLimit && linkIntact && amountIntact) {
         return {
           message: cleanMessage,
-          llmReasoning: parsed.reasoning || 'Personalized empathetic copy generated via Gemini 2.5 Flash.',
+          llmReasoning: parsed.reasoning || `Personalized empathetic copy generated via ${getGeminiModel()}.`,
           isTemplateFallback: false,
         };
       }

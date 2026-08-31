@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { readCredential } from '@/lib/config';
 import { db } from '@/lib/db';
 import { webhookEvents, paymentFailures, customers } from '@/lib/db/schema';
 import { and, eq } from 'drizzle-orm';
@@ -17,11 +18,11 @@ export async function POST(req: NextRequest) {
   try {
     const rawBody = await req.text();
     const signature = req.headers.get('x-razorpay-signature') || '';
-    const secret = process.env.RAZORPAY_WEBHOOK_SECRET || '';
+    const secret = readCredential('RAZORPAY_WEBHOOK_SECRET');
 
     // Signature verification is mandatory. A missing or placeholder secret is a
     // deployment misconfiguration, not permission to skip verification (RA-01).
-    if (!secret || secret.includes('XXXXXXXX')) {
+    if (!secret) {
       console.error('[webhook:razorpay] RAZORPAY_WEBHOOK_SECRET not configured — rejecting request');
       return NextResponse.json(
         { success: false, error: { code: 'NOT_CONFIGURED', message: 'Webhook secret not configured' } },
