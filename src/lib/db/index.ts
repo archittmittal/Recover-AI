@@ -13,13 +13,28 @@ const globalForDb = globalThis as unknown as {
 const MIGRATIONS_FOLDER = path.join(process.cwd(), 'src/lib/db/migrations');
 const MIGRATIONS_TABLE = '__drizzle_migrations';
 
-// Journal timestamps from meta/_journal.json, ascending. Used to stamp how far a
-// pre-migration database already got. The stamp records the LAST migration already
-// applied, so everything after it runs.
-const GEN_0000 = 1787290072100; // base tables only
-const GEN_0001 = 1787560398517; // recovery_actions.provider_message_id added
-const GEN_0002 = 1787562694538; // customers.razorpay_customer_id added
-const GEN_0003 = 1787563528846; // idx_* performance indexes added
+/**
+ * Drizzle decides which migrations to run by comparing each journal entry's `when` against
+ * the newest `created_at` in the ledger, so adoption stamps a database with the `when` of the
+ * last migration it already has. Those values are read from the journal rather than copied
+ * into constants — a hand-copied timestamp that drifts from a regenerated or reordered
+ * journal would silently skip or replay a migration.
+ */
+export function generationTimestamps(): number[] {
+  const journalPath = path.join(MIGRATIONS_FOLDER, 'meta', '_journal.json');
+  const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8')) as {
+    entries: { idx: number; when: number }[];
+  };
+  return [...journal.entries].sort((a, b) => a.idx - b.idx).map((e) => e.when);
+}
+
+/** Index into generationTimestamps(), named for the migration whose effects each one marks. */
+const GEN = {
+  BASE_TABLES: 0,          // 0000_init
+  PROVIDER_MESSAGE_ID: 1,  // 0001 — recovery_actions.provider_message_id
+  RAZORPAY_CUSTOMER_ID: 2, // 0002 — customers.razorpay_customer_id
+  PERF_INDEXES: 3,         // 0003 — idx_* indexes
+} as const;
 
 /**
  * Databases created before migrations became the single source of truth were built by an
@@ -52,11 +67,11 @@ function detectLegacyGeneration(sqlite: Database.Database): number | null {
       (c) => c.name === column
     );
 
-  // Every migration that alters a table must have a probe here, checked newest-first, and
-  // the floor must be GEN_0000 rather than GEN_0001 — stamping a database at the generation
-  // of a migration it has NOT run marks that migration applied and skips it permanently.
-  // That is not hypothetical: 0001 adds recovery_actions.provider_message_id, and an
-  // unconditional GEN_0001 floor left the column missing forever on a real database.
+  // Every migration that alters a table needs a probe here, checked newest-first, and the
+  // floor must be the base-tables generation. Stamping a database at the generation of a
+  // migration it has NOT run marks that migration applied and skips it permanently — not
+  // hypothetical: 0001 adds recovery_actions.provider_message_id, and a floor one generation
+  // too high left that column missing forever on a real database.
   //
   // Generation is read from columns only. Index presence is deliberately NOT used as
   // evidence: the retired inline DDL created the idx_* indexes from its first version,
@@ -64,9 +79,10 @@ function detectLegacyGeneration(sqlite: Database.Database): number | null {
   // still missing the 0002 column. Treating an index as proof of generation skips 0002 and
   // leaves the database permanently stale — the exact failure this adoption path exists to
   // repair.
-  if (hasColumn('customers', 'razorpay_customer_id')) return GEN_0002;
-  if (hasColumn('recovery_actions', 'provider_message_id')) return GEN_0001;
-  return GEN_0000;
+  const when = generationTimestamps();
+  if (hasColumn('customers', 'razorpay_customer_id')) return when[GEN.RAZORPAY_CUSTOMER_ID];
+  if (hasColumn('recovery_actions', 'provider_message_id')) return when[GEN.PROVIDER_MESSAGE_ID];
+  return when[GEN.BASE_TABLES];
 }
 
 /**
@@ -76,7 +92,7 @@ function detectLegacyGeneration(sqlite: Database.Database): number | null {
  * derived data — dropping them loses nothing.
  */
 function clearIndexesCreatedAfter(sqlite: Database.Database, generation: number): void {
-  if (generation >= GEN_0003) return;
+  if (generation >= generationTimestamps()[GEN.PERF_INDEXES]) return;
   const created = [
     'idx_audit_journey',
     'idx_failures_customer',

@@ -164,3 +164,38 @@ describe('RA-25 — schema convergence', () => {
     expect(() => db.select().from(customers)).toThrow(/Unsupported DATABASE_URL/);
   });
 });
+
+describe('generation timestamps track the migration journal', () => {
+  it('matches every journal entry, in idx order', async () => {
+    resetDbSingleton();
+    const { generationTimestamps } = await import('../src/lib/db');
+    const journal = JSON.parse(
+      fs.readFileSync(
+        path.join(process.cwd(), 'src/lib/db/migrations/meta/_journal.json'),
+        'utf8'
+      )
+    ) as { entries: { idx: number; when: number }[] };
+
+    const expected = [...journal.entries].sort((a, b) => a.idx - b.idx).map((e) => e.when);
+    expect(generationTimestamps()).toEqual(expected);
+  });
+
+  it('is strictly ascending, which Drizzle\'s high-water comparison relies on', async () => {
+    resetDbSingleton();
+    const { generationTimestamps } = await import('../src/lib/db');
+    const ts = generationTimestamps();
+    expect(ts.length).toBeGreaterThanOrEqual(4);
+    for (let i = 1; i < ts.length; i++) {
+      expect(ts[i]).toBeGreaterThan(ts[i - 1]);
+    }
+  });
+
+  it('covers every migration file on disk, so a new one cannot be missed', async () => {
+    resetDbSingleton();
+    const { generationTimestamps } = await import('../src/lib/db');
+    const sqlFiles = fs
+      .readdirSync(path.join(process.cwd(), 'src/lib/db/migrations'))
+      .filter((f) => f.endsWith('.sql'));
+    expect(generationTimestamps().length).toBe(sqlFiles.length);
+  });
+});
