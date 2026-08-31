@@ -14,8 +14,10 @@ const MIGRATIONS_FOLDER = path.join(process.cwd(), 'src/lib/db/migrations');
 const MIGRATIONS_TABLE = '__drizzle_migrations';
 
 // Journal timestamps from meta/_journal.json, ascending. Used to stamp how far a
-// pre-migration database already got.
-const GEN_0001 = 1787560398517; // tables exist, pre-razorpay_customer_id
+// pre-migration database already got. The stamp records the LAST migration already
+// applied, so everything after it runs.
+const GEN_0000 = 1787290072100; // base tables only
+const GEN_0001 = 1787560398517; // recovery_actions.provider_message_id added
 const GEN_0002 = 1787562694538; // customers.razorpay_customer_id added
 const GEN_0003 = 1787563528846; // idx_* performance indexes added
 
@@ -50,13 +52,21 @@ function detectLegacyGeneration(sqlite: Database.Database): number | null {
       (c) => c.name === column
     );
 
+  // Every migration that alters a table must have a probe here, checked newest-first, and
+  // the floor must be GEN_0000 rather than GEN_0001 — stamping a database at the generation
+  // of a migration it has NOT run marks that migration applied and skips it permanently.
+  // That is not hypothetical: 0001 adds recovery_actions.provider_message_id, and an
+  // unconditional GEN_0001 floor left the column missing forever on a real database.
+  //
   // Generation is read from columns only. Index presence is deliberately NOT used as
   // evidence: the retired inline DDL created the idx_* indexes from its first version,
   // independently of migration 0003, so a legacy database can carry those indexes while
   // still missing the 0002 column. Treating an index as proof of generation skips 0002 and
   // leaves the database permanently stale — the exact failure this adoption path exists to
   // repair.
-  return hasColumn('customers', 'razorpay_customer_id') ? GEN_0002 : GEN_0001;
+  if (hasColumn('customers', 'razorpay_customer_id')) return GEN_0002;
+  if (hasColumn('recovery_actions', 'provider_message_id')) return GEN_0001;
+  return GEN_0000;
 }
 
 /**

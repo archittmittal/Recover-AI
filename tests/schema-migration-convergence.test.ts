@@ -60,6 +60,33 @@ async function bootAgainst(dbPath: string) {
 const columnsOf = (h: Database.Database, t: string) =>
   (h.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[]).map((c) => c.name);
 
+/**
+ * Every table and its columns, sorted. Spot-checking individual columns is what let a real
+ * defect through: the adoption stamp skipped migration 0001, so recovery_actions was missing
+ * provider_message_id while the two columns the test did assert were present. Comparing the
+ * whole shape against a freshly migrated database is the assertion that actually holds.
+ */
+function fullSchema(h: Database.Database): Record<string, string[]> {
+  const tables = (
+    h
+      .prepare(
+        `SELECT name FROM sqlite_master WHERE type='table'
+         AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '__drizzle%' ORDER BY name`
+      )
+      .all() as { name: string }[]
+  ).map((r) => r.name);
+  return Object.fromEntries(tables.map((t) => [t, columnsOf(h, t).sort()]));
+}
+
+/** The schema a brand-new database gets from the migrations — the reference shape. */
+async function freshSchema(): Promise<Record<string, string[]>> {
+  const p = path.join(tmpDir, `ref-${crypto.randomUUID()}.db`);
+  const h = await bootAgainst(p);
+  const shape = fullSchema(h);
+  h.close();
+  return shape;
+}
+
 describe('RA-25 — schema convergence', () => {
   it('a fresh database is built by the migrations and records a ledger', async () => {
     const p = path.join(tmpDir, `fresh-${crypto.randomUUID()}.db`);
@@ -92,6 +119,8 @@ describe('RA-25 — schema convergence', () => {
     // Pre-existing data survived the migration.
     const row = h.prepare(`SELECT name FROM customers WHERE id='cust_legacy'`).get() as { name: string };
     expect(row.name).toBe('Legacy Row');
+    // The converged shape matches a freshly migrated database exactly.
+    expect(fullSchema(h)).toEqual(await freshSchema());
     h.close();
   });
 
@@ -122,6 +151,7 @@ describe('RA-25 — schema convergence', () => {
     expect(
       (h.prepare(`SELECT name FROM customers WHERE id='cust_legacy'`).get() as { name: string }).name
     ).toBe('Legacy Row');
+    expect(fullSchema(h)).toEqual(await freshSchema());
     h.close();
   });
 
