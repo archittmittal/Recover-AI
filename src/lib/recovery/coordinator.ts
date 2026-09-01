@@ -368,6 +368,7 @@ export class RecoveryCoordinator {
       deliveryStatus,
       providerMessageId,
       customerResponse: null,
+      isTemplateFallback: messageResult.isTemplateFallback,
       outcome: succeeded ? 'pending' : 'failed',
       scheduledAt: scheduleInfo.scheduledIso,
       executedAt: nowStr,

@@ -1,0 +1,1 @@
+ALTER TABLE `recovery_actions` ADD `is_template_fallback` integer DEFAULT false NOT NULL;

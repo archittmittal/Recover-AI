@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { paymentFailures, recoveryJourneys } from '@/lib/db/schema';
 import { recoveryCoordinator } from '@/lib/recovery/coordinator';
+import { getSimulationSeed, isLive } from '@/lib/config';
+import { runSimulatedOutcomes } from '@/lib/simulation/outcomes';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,12 +29,37 @@ export async function POST() {
       }
     }
 
+    // 2. Ask the declared response model which of those outreach attempts converted (RA-23).
+    //
+    // This is the only place the two halves meet. The model decides; the coordinator applies.
+    // Neither imports the other, which is what stops the agent from marking its own homework —
+    // and it is why this composition lives in the route rather than inside either module.
+    //
+    // In live mode nothing is drawn: real customers and real Razorpay webhooks decide, and
+    // inventing recoveries alongside them would corrupt a real merchant's numbers.
+    const simulationSeed = getSimulationSeed();
+    const simulatedRecoveries = isLive() ? [] : await runSimulatedOutcomes(simulationSeed);
+
+    for (const recovery of simulatedRecoveries) {
+      await recoveryCoordinator.resolveJourneyWithPayment(
+        recovery.journeyId,
+        recovery.paymentId,
+        recovery.amountRecovered
+      );
+    }
+
     return NextResponse.json({
       success: true,
       data: {
         processedCount: processedJourneyIds.length,
         journeyIds: processedJourneyIds,
-        message: `Successfully processed recovery for ${processedJourneyIds.length} failures.`,
+        simulatedRecoveries: simulatedRecoveries.length,
+        simulationSeed: isLive() ? null : simulationSeed,
+        message:
+          `Successfully processed recovery for ${processedJourneyIds.length} failures` +
+          (isLive()
+            ? '.'
+            : `; the response model recovered ${simulatedRecoveries.length} of them (simulated).`),
       },
     });
   } catch (error: unknown) {

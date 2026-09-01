@@ -77,6 +77,11 @@ export const recoveryActions = sqliteTable(
     deliveryStatus: text('delivery_status').notNull(), // 'sent' | 'delivered' | 'read' | 'failed'
     providerMessageId: text('provider_message_id'),
     customerResponse: text('customer_response'),
+    // Whether the deterministic template shipped instead of LLM-generated copy. Recorded as a
+    // column rather than inferred from llmReasoning's wording, because the simulation response
+    // model reads it to decide whether the personalisation coefficient applies (RA-23) — a
+    // measurement input must not depend on matching a prose string.
+    isTemplateFallback: integer('is_template_fallback', { mode: 'boolean' }).notNull().default(false),
     outcome: text('outcome').notNull(), // 'pending' | 'payment_completed' | 'ignored' | 'opted_out' | 'failed'
     scheduledAt: text('scheduled_at').notNull(),
     executedAt: text('executed_at').notNull(),
