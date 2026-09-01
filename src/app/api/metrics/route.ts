@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { customers, paymentFailures, recoveryJourneys, recoveryActions, auditLogs } from '@/lib/db/schema';
 import { desc, eq, sql } from 'drizzle-orm';
+import { getMode, getSimulationSeed, isLive } from '@/lib/config';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +24,13 @@ export interface FailureTypeMetric {
   atRiskPaise: number;
   recoveredPaise: number;
   recoveryRatePct: number;
+}
+
+/** Where the numbers on this response came from — see the dashboard's simulation notice. */
+export interface MetricsProvenance {
+  mode: 'mock' | 'live';
+  outcomesAreSimulated: boolean;
+  simulationSeed: number | null;
 }
 
 export interface StrategyMetric {
@@ -248,6 +256,15 @@ export async function GET() {
         failureTypeMetrics,
         strategyMetrics,
         recentAudits,
+        // Whether these figures came from the declared response model or from real traffic.
+        // The dashboard's "simulated figures" notice reads this rather than being hardcoded:
+        // in RECOVERAI_MODE=live no draw is ever taken, and labelling real recoveries as
+        // simulated is the same class of error as the reverse (RA-23).
+        provenance: {
+          mode: getMode(),
+          outcomesAreSimulated: !isLive(),
+          simulationSeed: isLive() ? null : getSimulationSeed(),
+        },
       },
     });
   } catch (error: unknown) {

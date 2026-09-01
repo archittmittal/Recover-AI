@@ -34,6 +34,7 @@ const GEN = {
   PROVIDER_MESSAGE_ID: 1,  // 0001 — recovery_actions.provider_message_id
   RAZORPAY_CUSTOMER_ID: 2, // 0002 — customers.razorpay_customer_id
   PERF_INDEXES: 3,         // 0003 — idx_* indexes
+  TEMPLATE_FALLBACK: 4,    // 0004 — recovery_actions.is_template_fallback
 } as const;
 
 /**
@@ -80,6 +81,7 @@ function detectLegacyGeneration(sqlite: Database.Database): number | null {
   // leaves the database permanently stale — the exact failure this adoption path exists to
   // repair.
   const when = generationTimestamps();
+  if (hasColumn('recovery_actions', 'is_template_fallback')) return when[GEN.TEMPLATE_FALLBACK];
   if (hasColumn('customers', 'razorpay_customer_id')) return when[GEN.RAZORPAY_CUSTOMER_ID];
   if (hasColumn('recovery_actions', 'provider_message_id')) return when[GEN.PROVIDER_MESSAGE_ID];
   return when[GEN.BASE_TABLES];

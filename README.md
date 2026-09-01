@@ -119,7 +119,7 @@ Every batch therefore runs three arms over identical seeded data:
 
 **The honest headline is C minus B.** Arm B is what a cron job and a message template would have achieved on their own; only the delta is attributable to the agent's judgment. The comparison is built before any numbers exist, so the framing cannot be picked after the fact — and if C turns out to be roughly equal to B, that gets reported too.
 
-The batch is synthetic, so simulated customer behaviour follows a declared response model with benchmark-sourced coefficients, documented in `docs/SIMULATION_MODEL.md` and driven by a fixed seed. The agent cannot import that model — otherwise it would be marking its own homework. Every figure in the dashboard is labelled as simulation output against that model, never as recovered rupees.
+The batch is synthetic, so simulated customer behaviour follows a declared response model — a cause-specific base rate scaled by channel, attempt number, customer segment, and whether the copy came from the LLM or the template fallback — documented coefficient-by-coefficient in [`docs/SIMULATION_MODEL.md`](docs/SIMULATION_MODEL.md) and driven by a fixed seed. **Every coefficient is an estimate, not a measurement**, and the doc labels each one as such; they are declared in advance so the comparison they feed cannot be tuned after the results are in. The agent cannot import that model, and the model cannot import the agent — both directions are asserted by tests, because otherwise it would be marking its own homework. Every figure in the dashboard is labelled as simulation output against that model, never as recovered rupees.
 
 ---
 

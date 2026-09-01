@@ -70,6 +70,26 @@ export function getGeminiModel(): string {
   return process.env.GEMINI_MODEL?.trim() || 'gemini-3.6-flash';
 }
 
+/**
+ * The seed for the simulation response model (RA-23).
+ *
+ * Deliberately not 12345, the fixture seed in `src/lib/db/seed.ts`. One shared seed would mean
+ * that adding a customer name to the fixture list silently moves every recovery outcome, which
+ * makes a "reproducible" result reproducible only until someone edits an unrelated array.
+ */
+export const DEFAULT_SIMULATION_SEED = 20260823;
+
+export function getSimulationSeed(): number {
+  const raw = (process.env.SIMULATION_SEED || '').trim();
+  if (raw === '') return DEFAULT_SIMULATION_SEED;
+
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed)) {
+    throw new Error(`[config] Invalid SIMULATION_SEED="${raw}". Expected an integer.`);
+  }
+  return parsed;
+}
+
 /** One line at startup naming what is actually wired, so a silent downgrade is visible. */
 export function describeIntegrations(): string {
   const mode = getMode();
