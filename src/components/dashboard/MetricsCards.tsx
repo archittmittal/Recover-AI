@@ -25,14 +25,26 @@ export interface MetricsSummaryData {
   exhaustedCount: number;
   optedOutCount: number;
   optOutRatePct: number;
-  avgRecoveryTimeMinutes: number;
+  /** Null until something has actually been recovered — never a plausible-looking default. */
+  avgRecoveryTimeMinutes: number | null;
+}
+
+export interface ArmMetricData {
+  arm: 'A' | 'B' | 'C';
+  label: string;
+  description: string;
+  journeyCount: number;
+  resolvedCount: number;
+  atRiskPaise: number;
+  recoveredPaise: number;
+  recoveryRatePct: number;
+  recoveryRateByCountPct: number;
 }
 
 export interface BaselineComparisonData {
-  armA_noAgentPct: number;
-  armB_rulesOnlyDunningPct: number;
-  armC_recoverAiPct: number;
+  arms: ArmMetricData[];
   netLiftPct: number;
+  isMeasurable: boolean;
 }
 
 interface MetricsCardsProps {
@@ -45,11 +57,16 @@ export function MetricsCards({ summary, baseline }: MetricsCardsProps) {
     return `₹${rupees.toLocaleString('en-IN')}`;
   };
 
+  const armB = baseline.arms.find((a) => a.arm === 'B');
+  const armC = baseline.arms.find((a) => a.arm === 'C');
+
   const cards = [
     {
       title: 'Revenue at Risk',
       value: formatRupees(summary.totalAtRiskRupees),
-      subtext: `Across ${summary.totalFailures} payment failures`,
+      // Arm C's own cohort. The batch seeds the same failures into all three arms, so quoting
+      // the whole table here would triple the figure the product is reporting about itself.
+      subtext: `Arm C cohort · ${summary.totalJourneys} journeys`,
       icon: IndianRupee,
       color: 'text-rose-600 dark:text-rose-400',
       bg: 'bg-rose-50 dark:bg-rose-950/30',
@@ -67,9 +84,15 @@ export function MetricsCards({ summary, baseline }: MetricsCardsProps) {
     },
     {
       title: 'Net AI Lift (Arm C − B)',
-      value: `+${baseline.netLiftPct}%`,
-      subtext: `vs static rules baseline (${baseline.armB_rulesOnlyDunningPct}%)`,
-      badge: 'Defensible',
+      // Signed, and blank until every arm has run. A lift card that always shows a positive
+      // number is not reporting a measurement (RA-22).
+      value: baseline.isMeasurable
+        ? `${baseline.netLiftPct >= 0 ? '+' : ''}${baseline.netLiftPct} pts`
+        : '—',
+      subtext: baseline.isMeasurable
+        ? `Arm C ${armC?.recoveryRatePct ?? 0}% vs Arm B ${armB?.recoveryRatePct ?? 0}% (n=${armB?.journeyCount ?? 0} per arm)`
+        : 'Run the batch to measure all three arms',
+      badge: baseline.isMeasurable ? 'Measured' : 'Not yet run',
       icon: Zap,
       color: 'text-indigo-600 dark:text-indigo-400',
       bg: 'bg-indigo-50 dark:bg-indigo-950/30',
@@ -87,8 +110,11 @@ export function MetricsCards({ summary, baseline }: MetricsCardsProps) {
     },
     {
       title: 'Avg Recovery Time',
-      value: `${summary.avgRecoveryTimeMinutes}m`,
-      subtext: 'Time-to-settlement post-failure',
+      value: summary.avgRecoveryTimeMinutes != null ? `${summary.avgRecoveryTimeMinutes}m` : '—',
+      subtext:
+        summary.avgRecoveryTimeMinutes != null
+          ? 'Time-to-settlement post-failure'
+          : 'No recoveries yet',
       icon: Clock,
       color: 'text-amber-600 dark:text-amber-400',
       bg: 'bg-amber-50 dark:bg-amber-950/30',

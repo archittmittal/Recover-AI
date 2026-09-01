@@ -34,9 +34,21 @@ export const paymentFailures = sqliteTable(
     errorStep: text('error_step').notNull(), // 'payment_initiation' | 'authentication' | 'authorization'
     errorReason: text('error_reason').notNull(),
     errorDescription: text('error_description').notNull(),
+    // Experiment arm this failure belongs to: 'A' no agent, 'B' rules-only dunning, 'C' full
+    // agent (RA-22). The seeded batch materialises the same 50 failures into all three cohorts,
+    // so the failure mix is identical across arms by construction rather than by luck.
+    arm: text('arm').notNull().default('C'),
+    // Cohort-invariant identity of this failure: the same synthetic customer's same failure
+    // carries the same key in all three arms. The simulation response model draws on this key
+    // rather than on the row id, so every arm sees the *same* random draw and the arms differ
+    // only by the coefficients the agent's choices earn (common random numbers).
+    simulationKey: text('simulation_key').notNull().default(''),
     createdAt: text('created_at').notNull(),
   },
-  (table) => [index('idx_failures_customer').on(table.customerId)]
+  (table) => [
+    index('idx_failures_customer').on(table.customerId),
+    index('idx_failures_arm').on(table.arm),
+  ]
 );
 
 export const recoveryJourneys = sqliteTable(
@@ -55,10 +67,14 @@ export const recoveryJourneys = sqliteTable(
     currentAttempt: integer('current_attempt').notNull().default(0),
     currentChannel: text('current_channel'), // 'whatsapp' | 'sms' | 'email' | 'voice'
     resolvedAt: text('resolved_at'),
+    // Copied from the failure at journey creation (RA-22), so per-arm rates group without a
+    // join and a journey records the arm it actually ran under.
+    arm: text('arm').notNull().default('C'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
   (table) => [
+    index('idx_journeys_arm').on(table.arm),
     index('idx_journeys_customer').on(table.customerId),
     index('idx_journeys_failure').on(table.failureId),
   ]

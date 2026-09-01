@@ -10,7 +10,7 @@ import { generateId } from '../utils/ids';
 import { getClock, formatIST } from '../utils/time';
 import { writeAuditLog } from '../utils/audit';
 import { classifyFailureWithLLM } from '../ai/classifier';
-import { generateRecoveryMessage } from '../ai/messenger';
+import { generateRecoveryMessage, getTemplateFallbackMessage } from '../ai/messenger';
 import { razorpayClient } from '../razorpay/client';
 import { communicationManager, normalizeDispatchResult } from '../communication/manager';
 import { RecoveryStrategy } from './classifier';
@@ -63,18 +63,40 @@ export class RecoveryCoordinator {
     } else {
       journeyId = generateId('rj');
 
-      // 1. Stage 1: Detect & Diagnose
-      const classification = await classifyFailureWithLLM({
-        errorSource: failure.errorSource,
-        errorStep: failure.errorStep,
-        errorCode: failure.errorCode,
-        errorReason: failure.errorReason,
-        failureType: failure.failureType,
-        customerSegment: customer.segment as 'b2c' | 'b2b',
-        amount: failure.amount,
-      });
+      // The experiment arm decides how this journey is handled, and it is assigned by the
+      // seed rather than chosen by the agent (RA-22). An arm the classifier could select
+      // would not be a control.
+      const arm = failure.arm === 'A' || failure.arm === 'B' ? failure.arm : 'C';
 
-      const selectedStrategy = classification.strategy || 'smart_retry';
+      // 1. Stage 1: Detect & Diagnose.
+      //
+      // Arms A and B never reach the classifier at all. Arm A takes no action by definition,
+      // and Arm B is meant to be what a cron job would have done — a fixed strategy for every
+      // failure, chosen without looking at the cause. Calling the LLM and then discarding its
+      // answer would still let LLM latency, cost and failure modes into the baseline.
+      let selectedStrategy: RecoveryStrategy;
+      let classificationReasoning: string;
+
+      if (arm === 'A') {
+        selectedStrategy = 'no_outreach';
+        classificationReasoning = 'Arm A (control): failures are detected and recorded, never contacted.';
+      } else if (arm === 'B') {
+        selectedStrategy = 'rules_only';
+        classificationReasoning =
+          'Arm B (baseline): fixed cadence and a single template for every failure, with no classification step.';
+      } else {
+        const classification = await classifyFailureWithLLM({
+          errorSource: failure.errorSource,
+          errorStep: failure.errorStep,
+          errorCode: failure.errorCode,
+          errorReason: failure.errorReason,
+          failureType: failure.failureType,
+          customerSegment: customer.segment as 'b2c' | 'b2b',
+          amount: failure.amount,
+        });
+        selectedStrategy = classification.strategy || 'smart_retry';
+        classificationReasoning = classification.reasoning;
+      }
 
       await db.insert(recoveryJourneys).values({
         id: journeyId,
@@ -82,6 +104,7 @@ export class RecoveryCoordinator {
         failureId: failure.id,
         status: 'detected',
         strategy: selectedStrategy,
+        arm,
         amountAtRisk: failure.amount,
         amountRecovered: 0,
         maxAttempts: STRATEGY_CONFIGS[selectedStrategy].maxAttempts,
@@ -97,13 +120,21 @@ export class RecoveryCoordinator {
         eventType: 'journey_started',
         eventData: {
           failureId: failure.id,
+          arm,
           amount: failure.amount,
           errorReason: failure.errorReason,
           errorSource: failure.errorSource,
           classifiedStrategy: selectedStrategy,
-          classificationReasoning: classification.reasoning,
+          classificationReasoning,
         },
       });
+
+      // Arm A stops here, permanently. It stays 'detected' rather than advancing to
+      // 'recovering': the whole arm exists to answer "what does doing nothing cost?", and a
+      // journey that dispatched anything would not answer it.
+      if (arm === 'A') {
+        return journeyId;
+      }
 
       // Advance to diagnosing -> recovering
       await db
@@ -180,6 +211,19 @@ export class RecoveryCoordinator {
 
     if (journeyList.length === 0) return;
     const journey = journeyList[0];
+
+    // Arm A never dispatches, whoever calls this and however often (RA-22). The arm is a
+    // control, so its outreach count must be zero by construction rather than by the caller
+    // remembering not to ask.
+    if (journey.arm === 'A') {
+      await writeAuditLog({
+        journeyId,
+        actor: 'system',
+        eventType: 'attempt_aborted',
+        eventData: { reason: 'arm_a_no_outreach_control' },
+      });
+      return;
+    }
 
     // If journey is already closed, do nothing
     if (
@@ -325,15 +369,27 @@ export class RecoveryCoordinator {
     const strategyConfig = STRATEGY_CONFIGS[strategy] || STRATEGY_CONFIGS.payment_link;
     const discount = nextAttempt > 1 && strategyConfig.allowDiscount ? strategyConfig.maxDiscountPercentage : 0;
 
-    const messageResult = await generateRecoveryMessage({
+    const messageParams = {
       customerName: customer.name,
       language: (customer.preferredLanguage || 'en') as 'en' | 'hi' | 'hinglish',
-      channel: channel === 'sms' ? 'sms' : 'whatsapp',
+      channel: (channel === 'sms' ? 'sms' : 'whatsapp') as 'sms' | 'whatsapp',
       amount: journey.amountAtRisk,
       failureReason: 'transaction decline',
       paymentLinkUrl: paymentUrl,
       discountPercentage: discount,
-    });
+    };
+
+    // Arm B ships the deterministic template and never reaches the LLM (RA-22). Generating
+    // personalised copy and then discarding it would leave the baseline carrying the agent's
+    // cost and latency, and the C − B delta is supposed to isolate exactly what the LLM adds.
+    const messageResult =
+      journey.arm === 'B'
+        ? {
+            message: getTemplateFallbackMessage(messageParams),
+            llmReasoning: 'Arm B baseline: fixed template, no LLM call.',
+            isTemplateFallback: true,
+          }
+        : await generateRecoveryMessage(messageParams);
 
     // Actually dispatch the message through the channel-specific provider,
     // instead of hardcoding deliveryStatus (see RA-12).

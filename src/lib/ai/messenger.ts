@@ -23,7 +23,7 @@ export interface GeneratedMessageResult {
 /**
  * Deterministic template fallback messages ensuring 100% reliability if LLM is unavailable.
  */
-function getTemplateFallbackMessage(params: MessageGenerationParams): string {
+export function getTemplateFallbackMessage(params: MessageGenerationParams): string {
   const rupeeAmount = `₹${(params.amount / 100).toLocaleString('en-IN')}`;
   const name = params.customerName.split(' ')[0] || 'there';
 

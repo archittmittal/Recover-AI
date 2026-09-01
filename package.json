@@ -11,7 +11,8 @@
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:check": "drizzle-kit check"
+    "db:check": "drizzle-kit check",
+    "eval:arms": "vitest run --config vitest.eval.mts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

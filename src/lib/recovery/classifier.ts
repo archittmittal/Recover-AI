@@ -5,7 +5,12 @@ export type RecoveryStrategy =
   | 'merchant_alert'
   | 'payment_link'
   | 'conversational'
-  | 'invoice_reminder';
+  | 'invoice_reminder'
+  // The two baseline arms (RA-22). Neither is ever chosen by classification: they are assigned
+  // by the experiment, which is the point — an arm the classifier could select would not be a
+  // control.
+  | 'rules_only'
+  | 'no_outreach';
 
 export interface ClassificationInput {
   errorSource: RazorpayErrorSource | string;

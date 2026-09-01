@@ -20,6 +20,15 @@ describe('RecoverAI End-to-End Autonomous Workflow Smoke Suite', () => {
     await seedDatabase();
   });
 
+  /**
+   * The seeded batch is materialised into three experiment arms (RA-22), and only Arm C runs
+   * the full agent. These tests are about the agent's behaviour, so they draw from Arm C
+   * explicitly — picking the first row in the table would land in Arm A, which by design never
+   * dispatches anything.
+   */
+  const armCFailures = (limit: number) =>
+    db.select().from(paymentFailures).where(eq(paymentFailures.arm, 'C')).limit(limit);
+
   it('1. Seeds 50+ failure records across cards, UPI, subscriptions, and invoices', async () => {
     const custCount = await db.select().from(customers);
     const failCount = await db.select().from(paymentFailures);
@@ -29,7 +38,7 @@ describe('RecoverAI End-to-End Autonomous Workflow Smoke Suite', () => {
   });
 
   it('2. Initiates recovery journey and escalates outreach across channels', async () => {
-    const failureList = await db.select().from(paymentFailures).limit(1);
+    const failureList = await armCFailures(1);
     const failure = failureList[0];
 
     // startRecoveryJourney initiates the journey and automatically executes Attempt 1
@@ -74,7 +83,7 @@ describe('RecoverAI End-to-End Autonomous Workflow Smoke Suite', () => {
   });
 
   it('3. Resolves journey when customer completes payment via link', async () => {
-    const failureList = await db.select().from(paymentFailures).limit(2);
+    const failureList = await armCFailures(2);
     const failure = failureList[1];
 
     const journeyId = await recoveryCoordinator.startRecoveryJourney(failure.id);
@@ -96,7 +105,7 @@ describe('RecoverAI End-to-End Autonomous Workflow Smoke Suite', () => {
   });
 
   it('4. Halts all future outreach when customer replies "STOP" (Stopping Rule #2)', async () => {
-    const failureList = await db.select().from(paymentFailures).limit(3);
+    const failureList = await armCFailures(3);
     const failure = failureList[2];
 
     const journeyId = await recoveryCoordinator.startRecoveryJourney(failure.id);

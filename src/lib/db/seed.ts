@@ -19,6 +19,27 @@ function generateSeededId(prefix: string, index: number): string {
   return `${prefix}_${String(index + 1).padStart(16, '0')}`;
 }
 
+/**
+ * The three experiment arms (RA-22). The same 50 failures are materialised into all three
+ * cohorts, so the failure mix, the amounts, the customer segments and the language mix are
+ * identical across arms by construction — the arms differ only in how the agent treats them.
+ *
+ * Partitioning 50 failures three ways would have been simpler, but it leaves ~17 journeys per
+ * arm and a mix that matches only approximately, which is not enough to read a delta from.
+ */
+export const EXPERIMENT_ARMS = ['A', 'B', 'C'] as const;
+export type ExperimentArm = (typeof EXPERIMENT_ARMS)[number];
+
+/** One failure before it is assigned to an arm: everything the three cohorts share. */
+type FailureSpec = Omit<
+  typeof paymentFailures.$inferInsert,
+  'id' | 'customerId' | 'arm' | 'simulationKey' | 'razorpayPaymentId'
+> & { index: number; paymentDigits: string };
+
+function armFailureId(arm: ExperimentArm, index: number): string {
+  return `fail_${arm}${String(index + 1).padStart(15, '0')}`;
+}
+
 export async function seedDatabase(): Promise<number> {
   const rng = new SeededRNG(12345); // Seed for reproducible batches
   const now = getClock().now();
@@ -62,8 +83,10 @@ export async function seedDatabase(): Promise<number> {
   }
   await db.insert(customers).values(generatedCustomers);
 
-  // 3. Generate 50 Payment Failures spanning the 6 categories
-  const generatedFailures: typeof paymentFailures.$inferInsert[] = [];
+  // 3. Generate the 50-failure batch spanning the 6 categories, once. Every rng draw below
+  //     happens exactly once and is then shared by all three arms, so the cohorts are clones
+  //     rather than three independent samples.
+  const failureSpecs: FailureSpec[] = [];
   
   // Helper to generate a failure item
   const buildFailure = (
@@ -76,10 +99,8 @@ export async function seedDatabase(): Promise<number> {
     code: 'BAD_REQUEST_ERROR' | 'GATEWAY_ERROR' | 'SERVER_ERROR',
     description: string,
     amount: number
-  ): typeof paymentFailures.$inferInsert => {
-    const failureId = generateSeededId('fail', index);
-    const customerId = generateSeededId('cust', index);
-    const payId = `pay_${String(rng.range(100000000000, 999999999999))}`;
+  ): FailureSpec => {
+    const paymentDigits = String(rng.range(100000000000, 999999999999));
     const ordId = `order_${String(rng.range(100000000000, 999999999999))}`;
     const subId = failureType === 'subscription' || failureType === 'mandate' ? `sub_${String(rng.range(100000000000, 999999999999))}` : null;
     const invId = failureType === 'invoice' ? `inv_${String(rng.range(100000000000, 999999999999))}` : null;
@@ -89,9 +110,8 @@ export async function seedDatabase(): Promise<number> {
     const failTime = new Date(now.getTime() - failOffset);
 
     return {
-      id: failureId,
-      customerId,
-      razorpayPaymentId: payId,
+      index,
+      paymentDigits,
       razorpayOrderId: ordId,
       razorpaySubscriptionId: subId,
       razorpayInvoiceId: invId,
@@ -123,7 +143,7 @@ export async function seedDatabase(): Promise<number> {
   ] as const;
   for (const item of c1Reasons) {
     const amt = rng.range(499, 9999) * 100;
-    generatedFailures.push(
+    failureSpecs.push(
       buildFailure(failIdx, 'one_time', 'card', item.r, item.s, item.st, item.c, item.d, amt)
     );
     failIdx++;
@@ -141,7 +161,7 @@ export async function seedDatabase(): Promise<number> {
   ] as const;
   for (const item of c2Reasons) {
     const amt = rng.range(199, 4999) * 100;
-    generatedFailures.push(
+    failureSpecs.push(
       buildFailure(failIdx, 'one_time', 'upi', item.r, item.s, item.st, item.c, item.d, amt)
     );
     failIdx++;
@@ -160,7 +180,7 @@ export async function seedDatabase(): Promise<number> {
   ] as const;
   for (const item of c3Reasons) {
     const amt = rng.pick([49900, 99900, 149900, 199900, 299900]);
-    generatedFailures.push(
+    failureSpecs.push(
       buildFailure(failIdx, 'subscription', 'card', item.r, item.s, item.st, item.c, item.d, amt)
     );
     failIdx++;
@@ -178,7 +198,7 @@ export async function seedDatabase(): Promise<number> {
   ] as const;
   for (const item of c4Reasons) {
     const amt = rng.pick([99900, 199900, 499900]);
-    generatedFailures.push(
+    failureSpecs.push(
       buildFailure(failIdx, 'mandate', 'emandate', item.r, item.s, item.st, item.c, item.d, amt)
     );
     failIdx++;
@@ -187,7 +207,7 @@ export async function seedDatabase(): Promise<number> {
   // Category 5: Checkout abandonment (10 records)
   for (let i = 0; i < 10; i++) {
     const amt = rng.range(999, 19999) * 100;
-    generatedFailures.push(
+    failureSpecs.push(
       buildFailure(
         failIdx,
         'one_time',
@@ -206,7 +226,7 @@ export async function seedDatabase(): Promise<number> {
   // Category 6: B2B overdue invoices (10 records)
   for (let i = 0; i < 10; i++) {
     const amt = rng.range(5000, 75000) * 100; // e.g. ₹5,000 to ₹75,000
-    generatedFailures.push(
+    failureSpecs.push(
       buildFailure(
         failIdx,
         'invoice',
@@ -222,9 +242,29 @@ export async function seedDatabase(): Promise<number> {
     failIdx++;
   }
 
+  // 4. Materialise the batch into one cohort per arm. `simulationKey` is the same in all three,
+  //    which is what makes the arms comparable: the response model draws on that key, so a
+  //    synthetic customer who was going to be a hard sell is a hard sell in every arm, and the
+  //    only thing that moves between arms is the probability the agent's choices earn.
+  const generatedFailures: typeof paymentFailures.$inferInsert[] = [];
+
+  for (const arm of EXPERIMENT_ARMS) {
+    for (const spec of failureSpecs) {
+      const { index, paymentDigits, ...shared } = spec;
+      generatedFailures.push({
+        ...shared,
+        id: armFailureId(arm, index),
+        customerId: generateSeededId('cust', index),
+        razorpayPaymentId: `pay_${arm}${paymentDigits}`,
+        arm,
+        simulationKey: `sim_${String(index + 1).padStart(16, '0')}`,
+      });
+    }
+  }
+
   await db.insert(paymentFailures).values(generatedFailures);
 
-  // 4. Update customer total_failures statistics based on generated failures
+  // 5. Update customer total_failures statistics based on generated failures
   for (let i = 0; i < 50; i++) {
     const custId = generateSeededId('cust', i);
     const count = generatedFailures.filter(f => f.customerId === custId).length;
