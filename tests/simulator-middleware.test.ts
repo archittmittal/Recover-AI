@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { middleware } from '../src/middleware';
+import { middleware } from '../src/proxy';
 
 /**
  * RA-02: /api/simulator/* (seed, pay, reply) has no authentication and

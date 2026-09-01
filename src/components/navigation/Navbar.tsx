@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -14,10 +14,12 @@ import {
   Clock,
   Sparkles,
   Loader2,
+  LogOut,
 } from 'lucide-react';
 
 export function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [isSeeding, setIsSeeding] = useState(false);
   const [isRecovering, setIsRecovering] = useState(false);
   const [istTime, setIstTime] = useState<string>('');
@@ -79,6 +81,15 @@ export function Navbar() {
       console.error('Run agent error:', err);
     } finally {
       setIsRecovering(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } finally {
+      router.push('/login');
+      router.refresh();
     }
   };
 
@@ -195,6 +206,17 @@ export function Navbar() {
                 Run AI Agent
               </>
             )}
+          </Button>
+
+          {/* Log out of the dashboard session */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleLogout}
+            className="text-xs font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+          >
+            <LogOut className="w-3.5 h-3.5 mr-1.5" />
+            Log out
           </Button>
         </div>
       </div>
