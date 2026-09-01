@@ -1,6 +1,6 @@
 # Simulation Response Model
 
-**Status:** active · **Model version:** 1.0.0 · **Implemented in:** [`src/lib/simulation/response-model.ts`](../src/lib/simulation/response-model.ts) · **Issue:** RA-23
+**Status:** active · **Model version:** 1.1.0 · **Implemented in:** [`src/lib/simulation/response-model.ts`](../src/lib/simulation/response-model.ts) · **Issue:** RA-23
 
 Every recovery figure in this project is a **simulation output against the model described on
 this page**. None of it is recovered rupees. The batch is synthetic, the customers are
@@ -29,6 +29,7 @@ interface OutreachOutcomeInput {
   errorReason: string;        // the root cause the customer has to overcome
   attemptNumber: number;      // 1-based
   channel: 'whatsapp' | 'sms' | 'email' | 'voice';
+  previousChannel: 'whatsapp' | 'sms' | 'email' | 'voice' | null;
   segment: 'b2c' | 'b2b';
   isTemplateFallback: boolean; // true when the deterministic template shipped
 }
@@ -43,7 +44,8 @@ properties of what it actually sent.
 ```
 probability = clamp(
     baseRate(errorReason)
-  × channelMultiplier(channel)
+  × channelFit(channel, segment)
+  × repeatedChannel(channel, previousChannel)
   × attemptDecay(attemptNumber)
   × personalisation(isTemplateFallback)
   × segmentMultiplier(segment),
@@ -86,16 +88,35 @@ recovery asks of the customer.
 | `bank_account_invalid` | 0.12 | The account itself is wrong; nearly always needs support contact. |
 | *anything else* | 0.25 | Declared mid-range fallback, so an unseen cause degrades visibly rather than silently. |
 
-### Channel multiplier
+### Channel fit, by segment
 
-WhatsApp is the reference (1.00) because it is the seeded batch's primary channel.
+How well a channel fits the person being contacted. Until v1.1.0 this was a single unconditional
+ranking, which asserted that email is a poor channel for everyone — so routing a B2B overdue
+invoice to email, which is simply how businesses pay invoices, scored as a mistake (RA-32).
 
-| Channel | Multiplier | Reasoning (estimated) |
-| :--- | ---: | :--- |
-| `whatsapp` | 1.00 | Reference. |
-| `voice` | 0.90 | Highest attention when answered, but many calls are not answered. |
-| `sms` | 0.78 | Reliably delivered, easily ignored. |
-| `email` | 0.55 | Slowest, and the most likely to be filtered. |
+| Channel | B2C | B2B | Reasoning (estimated) |
+| :--- | ---: | ---: | :--- |
+| `whatsapp` | 1.00 | 0.85 | B2C reference. Reaches a business *person*, but not the accounts inbox that pays. |
+| `voice` | 0.90 | 0.80 | Highest attention when answered; many calls are not answered. A B2B call still has to be routed internally. |
+| `sms` | 0.78 | 0.60 | Reliably delivered, easily ignored. Effectively a consumer channel. |
+| `email` | 0.55 | **1.00** | Slow and filterable for a consumer; where invoices live, and the only channel with a paper trail a finance team accepts. |
+
+**The B2C column is unchanged from v1.0.0.** Only the B2B column is new.
+
+### Repeated-channel decay
+
+| Situation | Multiplier |
+| :--- | ---: |
+| First attempt, or a different channel from the previous attempt | 1.00 |
+| Same channel as the immediately preceding attempt | **0.85** |
+
+Expressed as a penalty for repeating rather than a bonus for switching, deliberately: a switch
+bonus would credit the agent for the act of escalating, while this says only that an identical
+message reaches someone who already ignored one less well.
+
+*Double-counting caveat, recorded rather than resolved:* `ATTEMPT_DECAY` already models a
+customer's willingness decaying with each attempt. This term models reach and attention instead —
+related, and not perfectly separable. 0.85 is modest for that reason.
 
 ### Attempt decay
 
@@ -160,56 +181,59 @@ latency, and would make the C − B delta measure nothing.
 ## Current measured result
 
 Reproduce with `npm run eval:arms` — 25 replications, seeds from `20260823` in steps of 7919,
-24-day window, `RECOVERAI_MODE=mock`. Recorded 2026-09-01.
+24-day window, `RECOVERAI_MODE=mock`. Recorded 2026-09-01, model v1.1.0.
 
 | Arm | By amount | By journeys | Attempts / journey |
 | :--- | ---: | ---: | ---: |
 | A · no agent | 0.0% ± 0.0 | 0.0% ± 0.0 | 0.00 |
-| B · rules-only dunning | 42.4% ± 12.2 | 46.8% ± 6.9 | 2.23 |
-| C · full agent | 35.3% ± 10.7 | 43.4% ± 7.0 | 2.28 |
+| B · rules-only dunning | 35.1% ± 12.7 | 43.5% ± 6.9 | 2.26 |
+| C · full agent | 37.9% ± 11.5 | 44.2% ± 7.1 | 2.25 |
 
 | C − B | Mean | SE | Range | t |
 | :--- | ---: | ---: | :--- | ---: |
-| by amount | **−7.07 pts** | 1.32 | [−21.0, 0.0] | −5.4 |
-| by journeys | **−3.44 pts** | 0.56 | [−10.0, 0.0] | −6.1 |
+| by amount | **+2.82 pts** | 0.80 | [−0.2, 11.8] | 3.5 |
+| by journeys | **+0.72 pts** | 0.26 | [−2.0, 4.0] | 2.8 |
 
-Negative in 20 of 25 replications; **positive in none.**
+Positive in 24 of 25 replications.
 
-**The agent measures worse than a cron job with one template, and the deficit is not noise.**
-Reported because the README promises it: *"if C turns out to be roughly equal to B, that gets
-reported too."*
+### Read this before quoting the number above
 
-Three things this replication established that a single run did not:
+**The sign of this result changed when v1.1.0 landed, and v1.1.0 was written after v1.0.0
+produced a result unfavourable to the agent.** That is the exact pattern a reader should be
+suspicious of, so here is the full accounting.
 
-1. **A single run understates the rates badly.** The first figure recorded here was B 22.7% /
-   C 21.6% from an 8-day window. `invoice_reminder` schedules attempts at +24h, +168h and +336h,
-   so a week truncates the ladder mid-flight. Run to 24 days the same arms converge near 42% and
-   35%. Any comparison over a window shorter than the longest declared cadence is measuring the
-   window, not the arms.
-2. **The delta is systematic, not sampling noise.** t ≈ −5 to −6 over 25 replications. Common
-   random numbers are doing their job: paired arms make the difference far tighter than the arms
-   themselves (SE 1.3 against an arm SD of 12).
-3. **In mock mode the comparison is structurally degenerate, and the range shows it.** The best
-   C − B across 25 seeds is *exactly* 0.0, never above. That is the fingerprint of a pointwise
-   ordering: with no LLM key, Arm C's probability is ≤ Arm B's for every single draw — the
-   personalisation term is off in both arms, and every channel the agent escalates to is scored
-   below WhatsApp, which is where Arm B stays. Under common random numbers, C therefore recovers
-   a strict subset of what B recovers. **In this configuration the experiment cannot produce a
-   positive result, whatever the agent does.**
+Under v1.0.0 the same harness measured **C − B = −7.07 pts** (t = −5.4, negative in 20/25). The
+two v1.1.0 coefficients were declared in advance in RA-32 — the issue was filed with the numbers
+in it before the model was touched — but they were still chosen with the −7.07 already known.
+What defends them is not neutrality; it is that v1.0.0's channel term embedded an assumption
+("switching channels is pure loss; email is bad for everyone") that was never argued for and is
+less defensible than this one. A reader who disagrees can rescale: the B2B email cell and the
+0.85 repeat term are the only two numbers that moved.
 
-That last point is the honest reading: today the harness measures the arms correctly and the
-model cannot reward the thing the agent is for. Two changes make it informative, and both must
-be declared before the next run rather than after it:
+**Ablation** — each term measured alone, 25 replications, by amount:
 
-- **A live `GEMINI_API_KEY` (RA-24).** Personalisation (×1.18) is the only term that can lift C
-  above B, and it never fires while every message is the template fallback.
-- **A channel term that varies by context.** Today it is one unconditional ranking, so email to
-  a B2B invoice is scored the same as email to a B2C card decline, and switching channel after
-  an ignored message earns nothing for reaching the customer somewhere new. Escalation is
-  therefore pure loss by construction — a weakness in the model, not a finding about the agent.
+| Configuration | Arm B | Arm C | C − B | t |
+| :--- | ---: | ---: | ---: | ---: |
+| v1.0.0 — neither term | 42.4% | 35.3% | −7.07 | −5.4 |
+| Channel fit only | 37.7% | 37.9% | +0.25 | 0.4 |
+| Repeat decay only | 37.9% | 35.3% | −2.56 | −1.7 |
+| v1.1.0 — both | 35.1% | 37.9% | **+2.82** | 3.5 |
 
-**No coefficient was changed after seeing these numbers**, and this section exists so that anyone
-who does change one has to explain the before and after.
+Three things follow, and all three belong next to the headline:
+
+1. **Neither term alone produces a significant result.** Fit alone lands at +0.25 (t = 0.4);
+   repeat decay alone stays negative at −2.56. Only the combination clears significance.
+2. **Most of the movement is Arm B falling, not Arm C rising.** Across the ~10-point swing, Arm B
+   drops 7.3 points (42.4 → 35.1) while Arm C gains 2.6 (35.3 → 37.9). The agent did not get
+   better; the baseline stopped being flattered by a model that ignored channel repetition.
+3. **By journey count the advantage is small.** +0.72 points is under half a journey in 50. The
+   rupee-weighted +2.82 comes mostly from the ten B2B invoices — the largest amounts in the
+   batch — being routed to email. The honest one-line summary is: *under this model, the agent's
+   measurable edge is that it sends invoices by email.*
+
+The personalisation coefficient still never fires in mock mode, so this remains a measurement of
+routing and cadence, not of the LLM. Nothing here is evidence for or against personalised copy —
+that needs RA-24.
 
 ## Seeding and reproducibility
 
@@ -269,11 +293,11 @@ and the breakdown is recorded so any single outcome can be recomputed by hand fr
    `amount_at_risk`; real recovery sees part-payments and payment plans.
 3. **No time-of-day or day-of-week effect.** Contact hours are enforced by the agent's stopping
    rules, but the model does not treat a 9am message as different from a 6pm one.
-4. **No channel appropriateness, and no renewed reach.** The channel multiplier is a single
-   unconditional ranking, so email is scored the same for a B2B invoice as for a B2C card
-   decline, and switching channel after an ignored message earns nothing for having reached the
-   customer somewhere new. This makes escalation strictly costly under the model — see "Current
-   measured result".
+4. **Channel fit is coarse, and repetition decay may double-count.** As of v1.1.0 the channel
+   term varies by segment and a repeated channel decays (RA-32), but fit still ignores failure
+   type — an expired card and an overdue invoice route the same way for the same segment — and
+   the repeat term overlaps conceptually with `ATTEMPT_DECAY`. See the caveat under
+   "Repeated-channel decay".
 5. **No cross-journey memory.** A customer who ignored a previous failure's outreach is not
    modelled as less likely to respond to the next one.
 6. **In `RECOVERAI_MODE=mock` the personalisation coefficient never fires.** With no

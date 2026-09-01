@@ -5,7 +5,8 @@ import { SeededRNG } from '../src/lib/simulation/rng';
 import {
   ATTEMPT_DECAY,
   BASE_RATE_BY_ERROR_REASON,
-  CHANNEL_MULTIPLIER,
+  CHANNEL_FIT_BY_SEGMENT,
+  SAME_CHANNEL_REPEAT_MULTIPLIER,
   PERSONALISATION_MULTIPLIER,
   PROBABILITY_CEILING,
   PROBABILITY_FLOOR,
@@ -30,6 +31,7 @@ const BASE_INPUT: OutreachOutcomeInput = {
   errorReason: 'insufficient_funds',
   attemptNumber: 1,
   channel: 'whatsapp',
+  previousChannel: null,
   segment: 'b2c',
   isTemplateFallback: true,
 };
@@ -46,7 +48,7 @@ describe('RA-23 declared response model', () => {
 
     const expected =
       BASE_RATE_BY_ERROR_REASON.insufficient_funds *
-      CHANNEL_MULTIPLIER.sms *
+      CHANNEL_FIT_BY_SEGMENT.b2b.sms *
       ATTEMPT_DECAY[1] *
       PERSONALISATION_MULTIPLIER *
       0.85;
@@ -85,6 +87,46 @@ describe('RA-23 declared response model', () => {
     }
   });
 
+  it('scores a channel by how well it fits the segment being contacted (RA-32)', () => {
+    const b2bEmail = computePayProbability({ ...BASE_INPUT, segment: 'b2b', channel: 'email' });
+    const b2bWhatsapp = computePayProbability({ ...BASE_INPUT, segment: 'b2b', channel: 'whatsapp' });
+    const b2cEmail = computePayProbability({ ...BASE_INPUT, segment: 'b2c', channel: 'email' });
+    const b2cWhatsapp = computePayProbability({ ...BASE_INPUT, segment: 'b2c', channel: 'whatsapp' });
+
+    // Email is where a business pays an invoice and the wrong place to reach a consumer. The old
+    // unconditional table said email was bad for everyone, which made routing a B2B invoice to
+    // email — the agent's most defensible decision — score as a mistake.
+    expect(b2bEmail.channelMultiplier).toBeGreaterThan(b2bWhatsapp.channelMultiplier);
+    expect(b2cEmail.channelMultiplier).toBeLessThan(b2cWhatsapp.channelMultiplier);
+
+    // The B2C column is unchanged from the pre-RA-32 table, so nothing about consumer journeys
+    // moved when this landed.
+    expect(CHANNEL_FIT_BY_SEGMENT.b2c).toEqual({ whatsapp: 1.0, voice: 0.9, sms: 0.78, email: 0.55 });
+  });
+
+  it('decays a message repeated on the channel that was just ignored (RA-32)', () => {
+    const repeated = computePayProbability({
+      ...BASE_INPUT,
+      attemptNumber: 2,
+      channel: 'whatsapp',
+      previousChannel: 'whatsapp',
+    });
+    const switched = computePayProbability({
+      ...BASE_INPUT,
+      attemptNumber: 2,
+      channel: 'whatsapp',
+      previousChannel: 'sms',
+    });
+    const first = computePayProbability({ ...BASE_INPUT, attemptNumber: 1, previousChannel: null });
+
+    expect(repeated.repeatChannelMultiplier).toBe(SAME_CHANNEL_REPEAT_MULTIPLIER);
+    // Switching is neutral, not rewarded: the model must not credit the agent for the act of
+    // escalating, only decline to pretend a re-sent message lands as well as the first.
+    expect(switched.repeatChannelMultiplier).toBe(1);
+    expect(first.repeatChannelMultiplier).toBe(1);
+    expect(repeated.probability).toBeLessThan(switched.probability);
+  });
+
   it('falls back to a declared mid-range rate for an unseen error reason', () => {
     const unknown = computePayProbability({ ...BASE_INPUT, errorReason: 'not_a_seeded_reason' });
     expect(unknown.baseRate).toBe(0.25);
@@ -116,6 +158,7 @@ describe('RA-23 batch decisions', () => {
     attemptNumber: 1,
     channel: 'whatsapp',
     segment: 'b2c',
+    previousChannel: null,
     isTemplateFallback: false,
     ...overrides,
   });
