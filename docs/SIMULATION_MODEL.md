@@ -146,6 +146,12 @@ Clamped to **[0.01, 0.95]**. No outcome is ever certain, and none is ever imposs
 
 `POST /api/recovery/trigger` dispatches outreach through the coordinator, then asks the model
 which of those attempts converted, then hands the recoveries back to the coordinator to resolve.
+`POST /api/recovery/sweep` does the same for the outreach its abandonment pass dispatches — a
+sweep-only deployment would otherwise accumulate journeys that never resolve.
+
+Each recovery names the attempt that converted, so the conversion is credited to the outreach
+that caused it rather than to whichever attempt happens to be newest — the two can differ when
+a sweep's attempt 1 and a batch run's attempt 2 are outstanding at the same time.
 
 That composition happens **in the API route**, and this is load-bearing:
 
@@ -161,6 +167,10 @@ decide outcomes; inventing recoveries alongside them would corrupt a real mercha
 
 The manual **Pay** button in the simulator still works, so the live demo keeps its moment. It is
 now additive rather than the only source of outcomes.
+
+`GET /api/metrics` reports which of the two produced its numbers, under `provenance`, and the
+dashboard's simulation notice reads that field. Labelling a real recovery as simulated is the
+same class of error as the reverse, so the notice is not hardcoded.
 
 ## Audit trail
 

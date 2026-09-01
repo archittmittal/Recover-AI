@@ -21,6 +21,7 @@ const { customers, paymentFailures, recoveryJourneys, recoveryActions, auditLogs
 const { runSimulatedOutcomes } = await import('../src/lib/simulation/outcomes');
 const { getSimulationSeed, DEFAULT_SIMULATION_SEED } = await import('../src/lib/config');
 const { setClock, FixedClock } = await import('../src/lib/utils/time');
+const { recoveryCoordinator } = await import('../src/lib/recovery/coordinator');
 
 const NOW = '2026-08-21T14:30:00+05:30';
 const FIXTURE_COUNT = 24;
@@ -196,5 +197,100 @@ describe('RA-23 batch reproducibility', () => {
     // 12345 is src/lib/db/seed.ts's fixture seed; sharing it would let an edit to the synthetic
     // data move every recovery outcome.
     expect(DEFAULT_SIMULATION_SEED).not.toBe(12345);
+  });
+});
+
+describe('RA-23 conversion attribution', () => {
+  /**
+   * A journey can have more than one outreach outstanding — the abandonment sweep dispatches
+   * attempt 1, and a later batch run dispatches attempt 2 before any outcome has been drawn for
+   * the first. When the model then converts the earlier attempt, crediting the newest one
+   * attributes the recovery to the wrong channel and leaves the converting attempt 'pending'
+   * forever.
+   */
+  it('credits the attempt that converted, not merely the newest one', async () => {
+    setClock(new FixedClock(NOW));
+    await buildBatch();
+
+    const [journey] = await db.select().from(recoveryJourneys).limit(1);
+    const [firstAction] = await db
+      .select()
+      .from(recoveryActions)
+      .where(eq(recoveryActions.journeyId, journey.id));
+
+    const laterActionId = `ra_${crypto.randomUUID()}`;
+    await db.insert(recoveryActions).values({
+      id: laterActionId,
+      journeyId: journey.id,
+      attemptNumber: firstAction.attemptNumber + 1,
+      channel: 'sms',
+      actionType: 'payment_link',
+      messageContent: 'Second outreach, still unanswered.',
+      deliveryStatus: 'delivered',
+      customerResponse: null,
+      isTemplateFallback: true,
+      outcome: 'pending',
+      scheduledAt: NOW,
+      executedAt: NOW,
+      createdAt: NOW,
+    });
+
+    await recoveryCoordinator.resolveJourneyWithPayment(
+      journey.id,
+      'pay_sim_attribution',
+      journey.amountAtRisk,
+      firstAction.id
+    );
+
+    const actions = await db
+      .select()
+      .from(recoveryActions)
+      .where(eq(recoveryActions.journeyId, journey.id));
+
+    const byId = Object.fromEntries(actions.map((a) => [a.id, a.outcome]));
+    expect(byId[firstAction.id]).toBe('payment_completed');
+    expect(byId[laterActionId]).toBe('pending');
+  });
+
+  it('still falls back to the newest attempt when the caller cannot name one', async () => {
+    // A Razorpay webhook or a simulator click knows only that the customer paid after being
+    // contacted, so the newest attempt remains the right default there.
+    setClock(new FixedClock(NOW));
+    await buildBatch();
+
+    const [journey] = await db.select().from(recoveryJourneys).limit(1);
+    const [existing] = await db
+      .select()
+      .from(recoveryActions)
+      .where(eq(recoveryActions.journeyId, journey.id));
+
+    const newestId = `ra_${crypto.randomUUID()}`;
+    await db.insert(recoveryActions).values({
+      id: newestId,
+      journeyId: journey.id,
+      attemptNumber: existing.attemptNumber + 1,
+      channel: 'sms',
+      actionType: 'payment_link',
+      messageContent: 'Newest outreach.',
+      deliveryStatus: 'delivered',
+      customerResponse: null,
+      isTemplateFallback: true,
+      outcome: 'pending',
+      scheduledAt: NOW,
+      executedAt: NOW,
+      createdAt: NOW,
+    });
+
+    await recoveryCoordinator.resolveJourneyWithPayment(
+      journey.id,
+      'pay_sim_fallback',
+      journey.amountAtRisk
+    );
+
+    const [newest] = await db
+      .select()
+      .from(recoveryActions)
+      .where(eq(recoveryActions.id, newestId));
+    expect(newest.outcome).toBe('payment_completed');
   });
 });

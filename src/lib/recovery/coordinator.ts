@@ -494,7 +494,8 @@ export class RecoveryCoordinator {
   async resolveJourneyWithPayment(
     journeyId: string,
     paymentId: string,
-    amountPaid: number
+    amountPaid: number,
+    attributedActionId?: string
   ): Promise<void> {
     const nowStr = formatIST(getClock().now());
 
@@ -523,20 +524,31 @@ export class RecoveryCoordinator {
       })
       .where(eq(recoveryJourneys.id, journeyId));
 
-    // Attribute the conversion to the most recent outreach action so channel
-    // metrics can report real conversion rates instead of always reading 0.
-    const [lastAction] = await db
-      .select()
-      .from(recoveryActions)
-      .where(eq(recoveryActions.journeyId, journeyId))
-      .orderBy(desc(recoveryActions.attemptNumber))
-      .limit(1);
+    // Attribute the conversion to the outreach that actually caused it, so channel metrics
+    // can report real conversion rates instead of always reading 0.
+    //
+    // The caller names that action when it knows which one converted. Falling back to the most
+    // recent attempt is right for a webhook or a simulator click, where all we know is that the
+    // customer paid after being contacted — but it is wrong whenever an earlier attempt is the
+    // one that landed, which is exactly the case when several attempts are outstanding at once
+    // (a journey started by the abandonment sweep and continued by a later batch run). That
+    // path credited the wrong channel and left the converting attempt 'pending' forever.
+    const [fallbackAction] = attributedActionId
+      ? []
+      : await db
+          .select()
+          .from(recoveryActions)
+          .where(eq(recoveryActions.journeyId, journeyId))
+          .orderBy(desc(recoveryActions.attemptNumber))
+          .limit(1);
 
-    if (lastAction) {
+    const attributedId = attributedActionId ?? fallbackAction?.id;
+
+    if (attributedId) {
       await db
         .update(recoveryActions)
         .set({ outcome: 'payment_completed' })
-        .where(eq(recoveryActions.id, lastAction.id));
+        .where(eq(recoveryActions.id, attributedId));
     }
 
     // Recompute the customer's lifetime recovered total as a derived sum over

@@ -44,7 +44,10 @@ export async function POST() {
       await recoveryCoordinator.resolveJourneyWithPayment(
         recovery.journeyId,
         recovery.paymentId,
-        recovery.amountRecovered
+        recovery.amountRecovered,
+        // Name the attempt that converted: with several attempts outstanding, the newest one
+        // is not necessarily the one the model drew.
+        recovery.actionId
       );
     }
 
