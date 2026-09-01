@@ -43,6 +43,12 @@ export interface PendingOutreach {
   errorReason: string;
   attemptNumber: number;
   channel: SimulationChannel;
+  /**
+   * Channel of the preceding attempt on this journey, or null on the first (RA-32). Read from
+   * the recorded action rather than from the strategy's declared ladder: what matters is the
+   * channel the customer was actually messaged on last time, not the one the agent intended.
+   */
+  previousChannel: SimulationChannel | null;
   segment: SimulationSegment;
   isTemplateFallback: boolean;
 }
@@ -105,6 +111,7 @@ export function decideOutcomes(
       errorReason: row.errorReason,
       attemptNumber: row.attemptNumber,
       channel: row.channel,
+      previousChannel: row.previousChannel,
       segment: row.segment,
       isTemplateFallback: row.isTemplateFallback,
     };
@@ -164,6 +171,27 @@ export async function collectPendingOutreach(): Promise<PendingOutreach[]> {
       )
     );
 
+  // The preceding attempt is usually already closed ('ignored' or 'payment_completed'), so it
+  // cannot come from the pending set above — it is read from the journey's full action history.
+  const journeyIds = [...new Set(rows.map((r) => r.journeyId))];
+  const history = journeyIds.length
+    ? await db
+        .select({
+          journeyId: recoveryActions.journeyId,
+          attemptNumber: recoveryActions.attemptNumber,
+          channel: recoveryActions.channel,
+        })
+        .from(recoveryActions)
+        .where(inArray(recoveryActions.journeyId, journeyIds))
+    : [];
+
+  const previousChannelFor = (journeyId: string, attemptNumber: number): SimulationChannel | null => {
+    const earlier = history
+      .filter((h) => h.journeyId === journeyId && h.attemptNumber < attemptNumber)
+      .sort((a, b) => b.attemptNumber - a.attemptNumber)[0];
+    return (earlier?.channel as SimulationChannel) ?? null;
+  };
+
   return rows.map((r) => ({
     journeyId: r.journeyId,
     actionId: r.actionId,
@@ -173,6 +201,7 @@ export async function collectPendingOutreach(): Promise<PendingOutreach[]> {
     errorReason: r.errorReason,
     attemptNumber: r.attemptNumber,
     channel: r.channel as SimulationChannel,
+    previousChannel: previousChannelFor(r.journeyId, r.attemptNumber),
     segment: (r.segment === 'b2b' ? 'b2b' : 'b2c') as SimulationSegment,
     isTemplateFallback: Boolean(r.isTemplateFallback),
   }));
@@ -214,6 +243,7 @@ export async function runSimulatedOutcomes(simulationSeed: number): Promise<Simu
         simulationSeed,
         baseRate: outcome.baseRate,
         channelMultiplier: outcome.channelMultiplier,
+        repeatChannelMultiplier: outcome.repeatChannelMultiplier,
         attemptMultiplier: outcome.attemptMultiplier,
         personalisationMultiplier: outcome.personalisationMultiplier,
         segmentMultiplier: outcome.segmentMultiplier,

@@ -39,20 +39,24 @@
 > 
 > The metric that matters is the **Net Lift (C minus B)**, and every one of those three rates is computed from that arm's own journeys — there is no constant anywhere in the metrics route."*
 
-> **Presenter note — read the number off the screen, whatever it says.**
+> **Presenter note — read the number off the screen, and say where it came from.**
 > Over 25 replications (`npm run eval:arms`, recorded in `docs/SIMULATION_MODEL.md`), C − B is
-> **−7.1 points by amount, −3.4 by journeys** — negative in 20 of 25 runs and positive in none.
-> Say it plainly: *"measured against its own baseline, in mock mode, the agent currently loses,
-> and here is exactly why."* Two reasons, both structural: without a live `GEMINI_API_KEY` Arm C
-> sends the identical template Arm B sends, so the one coefficient that rewards the agent's
-> messaging never fires; and the model's channel term is a single unconditional ranking, so
-> escalating off WhatsApp can only cost. In this configuration the experiment **cannot** produce
-> a positive result — the best C − B across 25 seeds is exactly 0.0.
+> **+2.8 points by amount and +0.7 by journeys** — positive in 24 of 25 runs. Do not stop there,
+> because the interesting part is the history:
 >
-> That is a far better answer to *"how do you know it works?"* than a number nobody can derive.
-> The README already promises it: *"if C turns out to be roughly equal to B, that gets reported
-> too."* Then say what would change it, and that no coefficient was touched after the result
-> came in."*
+> - Under response model **v1.0.0** the same harness measured **−7.1 points**. The agent lost.
+> - **v1.1.0** changed two coefficients — email fits a B2B invoice, and a message repeated on the
+>   channel that was just ignored decays — and the sign flipped.
+> - The ablation says **neither change alone is significant**, and that most of the swing is Arm B
+>   *falling* rather than Arm C rising.
+> - By journey count the edge is under half a journey in fifty. In plain terms: under this model
+>   the agent's measurable advantage is mostly that it sends invoices by email.
+>
+> Say that out loud. A judge who hears "we measured −7, we found the reason, we declared the fix
+> in an issue before we made it, we re-measured at +2.8 and here is the ablation showing how much
+> of that is the baseline moving" learns far more about this team than one who hears a headline
+> percentage. And the personalisation coefficient still never fires in mock mode, so none of this
+> is evidence for or against the LLM copy — that needs a live key (RA-24)."*
 
 ---
 

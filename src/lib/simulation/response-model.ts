@@ -24,7 +24,7 @@
 import { SeededRNG } from './rng';
 
 /** Bumped whenever any coefficient below changes, so a recorded outcome names its model. */
-export const RESPONSE_MODEL_VERSION = '1.0.0';
+export const RESPONSE_MODEL_VERSION = '1.1.0';
 
 /** Local copies of the channel/segment unions: importing the agent's types would couple to it. */
 export type SimulationChannel = 'whatsapp' | 'sms' | 'email' | 'voice';
@@ -41,6 +41,8 @@ export interface OutreachOutcomeInput {
   /** 1-based; the same journey's second message is a second ask, not a fresh one. */
   attemptNumber: number;
   channel: SimulationChannel;
+  /** Channel of the preceding attempt on this journey; null on the first attempt. */
+  previousChannel: SimulationChannel | null;
   segment: SimulationSegment;
   /** True when the deterministic template shipped because the LLM path was unavailable or rejected. */
   isTemplateFallback: boolean;
@@ -69,15 +71,45 @@ export const BASE_RATE_BY_ERROR_REASON: Readonly<Record<string, number>> = {
 export const BASE_RATE_FALLBACK = 0.25;
 
 /**
- * Channel reach and immediacy. WhatsApp is the reference (1.00) because it is the seeded
- * batch's primary channel; the others are expressed relative to it.
+ * How well a channel fits the person being contacted (RA-32).
+ *
+ * This used to be one unconditional ranking, which asserted that email is a poor channel for
+ * everyone. That made `invoice_reminder` — routing a B2B overdue invoice to email, which is
+ * simply how businesses pay invoices — score as a mistake, and it made the agent's whole
+ * routing decision unmeasurable. The B2C column below is that original table, unchanged; only
+ * the B2B column is new.
  */
-export const CHANNEL_MULTIPLIER: Readonly<Record<SimulationChannel, number>> = {
-  whatsapp: 1.0,
-  voice: 0.9, // highest attention when answered, but many calls are not answered
-  sms: 0.78, // reliably delivered, easily ignored
-  email: 0.55, // slowest, and the one most likely to be filtered
+export const CHANNEL_FIT_BY_SEGMENT: Readonly<
+  Record<SimulationSegment, Readonly<Record<SimulationChannel, number>>>
+> = {
+  b2c: {
+    whatsapp: 1.0, // reference
+    voice: 0.9, // highest attention when answered, but many calls are not answered
+    sms: 0.78, // reliably delivered, easily ignored
+    email: 0.55, // slowest, and the one most likely to be filtered
+  },
+  b2b: {
+    email: 1.0, // where invoices live, and the only channel with a paper trail a finance team accepts
+    whatsapp: 0.85, // reaches a person, but not the accounts inbox that actually pays
+    voice: 0.8, // a call reaches one individual who then has to route it internally anyway
+    sms: 0.6, // effectively a consumer channel; largely ignored by a business payer
+  },
 };
+
+/**
+ * A second message on the channel that was just ignored (RA-32).
+ *
+ * Deliberately expressed as a penalty for repeating rather than a bonus for switching: a switch
+ * bonus would credit the agent for the act of escalating, while this says only that an
+ * identical message reaches someone who already ignored one less well. It is the more
+ * conservative framing for a project that benefits from the answer.
+ *
+ * Caveat, recorded rather than resolved: ATTEMPT_DECAY already models a customer's willingness
+ * decaying with each attempt. This term models reach and attention instead — related, not
+ * perfectly separable — and is set modest for that reason.
+ */
+export const SAME_CHANNEL_REPEAT_MULTIPLIER = 0.85;
+export const CHANNEL_SWITCH_MULTIPLIER = 1.0;
 
 /**
  * Per-attempt decay. A customer who ignored the first message is, by revealed preference, a
@@ -95,7 +127,12 @@ export const ATTEMPT_DECAY = [1.0, 0.62, 0.38] as const;
 export const PERSONALISATION_MULTIPLIER = 1.18;
 export const TEMPLATE_MULTIPLIER = 1.0;
 
-/** B2B payments route through approval chains that no message can shorten. */
+/**
+ * B2B payments route through approval chains that no message can shorten.
+ *
+ * Distinct from CHANNEL_FIT_BY_SEGMENT's B2B column, which is about *where* a business payer
+ * reads. This term is about how long the paying takes once they have read.
+ */
 export const SEGMENT_MULTIPLIER: Readonly<Record<SimulationSegment, number>> = {
   b2c: 1.0,
   b2b: 0.85,
@@ -107,7 +144,10 @@ export const PROBABILITY_CEILING = 0.95;
 
 export interface ProbabilityBreakdown {
   baseRate: number;
+  /** Channel fit for this customer's segment. */
   channelMultiplier: number;
+  /** 1.00 on a first attempt or after a channel switch; below 1 when the channel repeats. */
+  repeatChannelMultiplier: number;
   attemptMultiplier: number;
   personalisationMultiplier: number;
   segmentMultiplier: number;
@@ -130,7 +170,14 @@ function clamp(value: number, min: number, max: number): number {
  */
 export function computePayProbability(input: OutreachOutcomeInput): ProbabilityBreakdown {
   const baseRate = BASE_RATE_BY_ERROR_REASON[input.errorReason] ?? BASE_RATE_FALLBACK;
-  const channelMultiplier = CHANNEL_MULTIPLIER[input.channel] ?? CHANNEL_MULTIPLIER.sms;
+
+  const fit = CHANNEL_FIT_BY_SEGMENT[input.segment] ?? CHANNEL_FIT_BY_SEGMENT.b2c;
+  const channelMultiplier = fit[input.channel] ?? fit.sms;
+
+  const repeatChannelMultiplier =
+    input.previousChannel !== null && input.previousChannel === input.channel
+      ? SAME_CHANNEL_REPEAT_MULTIPLIER
+      : CHANNEL_SWITCH_MULTIPLIER;
 
   const decayIndex = clamp(input.attemptNumber - 1, 0, ATTEMPT_DECAY.length - 1);
   const attemptMultiplier = ATTEMPT_DECAY[decayIndex];
@@ -144,6 +191,7 @@ export function computePayProbability(input: OutreachOutcomeInput): ProbabilityB
   const rawProbability =
     baseRate *
     channelMultiplier *
+    repeatChannelMultiplier *
     attemptMultiplier *
     personalisationMultiplier *
     segmentMultiplier;
@@ -151,6 +199,7 @@ export function computePayProbability(input: OutreachOutcomeInput): ProbabilityB
   return {
     baseRate,
     channelMultiplier,
+    repeatChannelMultiplier,
     attemptMultiplier,
     personalisationMultiplier,
     segmentMultiplier,
