@@ -35,6 +35,7 @@ const GEN = {
   RAZORPAY_CUSTOMER_ID: 2, // 0002 — customers.razorpay_customer_id
   PERF_INDEXES: 3,         // 0003 — idx_* indexes
   TEMPLATE_FALLBACK: 4,    // 0004 — recovery_actions.is_template_fallback
+  EXPERIMENT_ARMS: 5,      // 0005 — payment_failures.arm/simulation_key, recovery_journeys.arm
 } as const;
 
 /**
@@ -81,6 +82,7 @@ function detectLegacyGeneration(sqlite: Database.Database): number | null {
   // leaves the database permanently stale — the exact failure this adoption path exists to
   // repair.
   const when = generationTimestamps();
+  if (hasColumn('recovery_journeys', 'arm')) return when[GEN.EXPERIMENT_ARMS];
   if (hasColumn('recovery_actions', 'is_template_fallback')) return when[GEN.TEMPLATE_FALLBACK];
   if (hasColumn('customers', 'razorpay_customer_id')) return when[GEN.RAZORPAY_CUSTOMER_ID];
   if (hasColumn('recovery_actions', 'provider_message_id')) return when[GEN.PROVIDER_MESSAGE_ID];
@@ -94,16 +96,33 @@ function detectLegacyGeneration(sqlite: Database.Database): number | null {
  * derived data — dropping them loses nothing.
  */
 function clearIndexesCreatedAfter(sqlite: Database.Database, generation: number): void {
-  if (generation >= generationTimestamps()[GEN.PERF_INDEXES]) return;
-  const created = [
-    'idx_audit_journey',
-    'idx_failures_customer',
-    'idx_actions_journey',
-    'idx_journeys_customer',
-    'idx_journeys_failure',
+  const when = generationTimestamps();
+
+  // Grouped by the migration that creates them. Dropping an index whose migration is ALREADY
+  // marked applied would lose it permanently — nothing would ever recreate it — so each group
+  // is cleared only when its own migration is still pending for this database.
+  const createdByGeneration: { createdAt: number; names: string[] }[] = [
+    {
+      createdAt: when[GEN.PERF_INDEXES],
+      names: [
+        'idx_audit_journey',
+        'idx_failures_customer',
+        'idx_actions_journey',
+        'idx_journeys_customer',
+        'idx_journeys_failure',
+      ],
+    },
+    {
+      createdAt: when[GEN.EXPERIMENT_ARMS],
+      names: ['idx_failures_arm', 'idx_journeys_arm'],
+    },
   ];
-  for (const name of created) {
-    sqlite.exec(`DROP INDEX IF EXISTS ${name}`);
+
+  for (const group of createdByGeneration) {
+    if (generation >= group.createdAt) continue;
+    for (const name of group.names) {
+      sqlite.exec(`DROP INDEX IF EXISTS ${name}`);
+    }
   }
 }
 

@@ -109,7 +109,8 @@ describe('RA-23 batch decisions', () => {
   const row = (overrides: Partial<PendingOutreach> = {}): PendingOutreach => ({
     journeyId: 'rj_a',
     actionId: 'ra_a',
-    failureId: 'fail_0000000000000001',
+    failureId: 'fail_C000000000000001',
+    simulationKey: 'sim_0000000000000001',
     amountAtRisk: 49900,
     errorReason: 'gateway_technical_error',
     attemptNumber: 1,
@@ -121,9 +122,9 @@ describe('RA-23 batch decisions', () => {
 
   it('is invariant to the order rows arrive in and to the random journey ids', () => {
     const rows = [
-      row({ journeyId: 'rj_a', actionId: 'ra_1', failureId: 'fail_0000000000000001' }),
-      row({ journeyId: 'rj_b', actionId: 'ra_2', failureId: 'fail_0000000000000002' }),
-      row({ journeyId: 'rj_c', actionId: 'ra_3', failureId: 'fail_0000000000000003', attemptNumber: 2 }),
+      row({ journeyId: 'rj_a', actionId: 'ra_1', failureId: 'fail_C000000000000001', simulationKey: 'sim_1' }),
+      row({ journeyId: 'rj_b', actionId: 'ra_2', failureId: 'fail_C000000000000002', simulationKey: 'sim_2' }),
+      row({ journeyId: 'rj_c', actionId: 'ra_3', failureId: 'fail_C000000000000003', simulationKey: 'sim_3', attemptNumber: 2 }),
     ];
 
     const forward = decideOutcomes(rows, 20260823);

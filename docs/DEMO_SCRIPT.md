@@ -11,7 +11,7 @@
 | Time | Scene | On-Screen Action | Key Talking Points |
 | :--- | :--- | :--- | :--- |
 | **0:00 – 0:45** | **Hook & The Problem** | Title slide / Hero Dashboard with ₹ at Risk | Razorpay merchants lose 15–20% of GMV to avoidable declines. Static dunning has low conversion; non-compliant outreach risks heavy penalties. |
-| **0:45 – 1:45** | **Executive Dashboard & 3-Arm Lift** | Navigate `/` → Highlight Metrics Cards & 3-Arm Chart | 6 Real-time KPIs. Controlled scientific baseline comparison: Arm A (0%), Arm B (31.5% rules dunning), Arm C (RecoverAI). Net lift **+18.5% incremental recovery**. |
+| **0:45 – 1:45** | **Executive Dashboard & 3-Arm Lift** | Navigate `/` → Highlight Metrics Cards & 3-Arm Chart | 6 Real-time KPIs. Three-arm comparison over one seeded batch, every rate measured from that arm's own journeys. **Read the lift off the screen — do not quote a number from this script.** |
 | **1:45 – 2:45** | **Multi-Channel Escalation & Audit** | Click "Customers" → Open "Audit Timeline" Modal | WhatsApp (Attempt 1) → SMS (Attempt 2) → AI Voice (Attempt 3). Expand immutable audit logs showing raw payloads and Gemini reasoning. |
 | **2:45 – 3:45** | **Interactive Sandbox & Stopping Rules** | Navigate `/simulator` → Select customer → Trigger "Pay Now" & "STOP" | Dual-panel testbed. Live payment link settlement; instant STOP opt-out compliance (Stopping Rule #2); live IST RBI contact hours clock (8AM–7PM). |
 | **3:45 – 4:30** | **OpenSSF Security & Architecture** | Show test suite (`npm test`) & CI workflows | Timing-safe HMAC verification (`crypto.timingSafeEqual`), DPDPA zero PII in prompts, append-only audit trail, 21/21 automated invariant tests. |
@@ -32,12 +32,23 @@
 > *(Screen shows `http://localhost:3000`)*
 > *"Here in the Executive Command Center, merchants have full visibility into revenue at risk versus recovered. 
 > 
-> Rather than making ungrounded claims, RecoverAI evaluates its performance through a **scientific 3-arm controlled trial**:
-> - **Arm A**: No Agent intervention (0% baseline).
-> - **Arm B**: Static rules-only dunning baseline (recovering ~31.5%).
-> - **Arm C**: RecoverAI's dynamic AI agent.
+> Rather than making ungrounded claims, RecoverAI evaluates itself through a **three-arm comparison** over one seeded batch, materialised into three identical cohorts:
+> - **Arm A**: no agent — detected and recorded, never contacted.
+> - **Arm B**: rules-only dunning — fixed cadence, one template, no LLM.
+> - **Arm C**: the full agent.
 > 
-> The metric that matters is the **Net Lift (C minus B)**—demonstrating over 18% in incremental settled revenue driven by our intelligent failover ladder."*
+> The metric that matters is the **Net Lift (C minus B)**, and every one of those three rates is computed from that arm's own journeys — there is no constant anywhere in the metrics route."*
+
+> **Presenter note — read the number off the screen, whatever it says.**
+> As of the run recorded in `docs/SIMULATION_MODEL.md`, C − B is **negative**: in mock mode Arm C
+> sends the same template copy as Arm B, so the one coefficient that rewards the agent's
+> messaging never fires, while its channel escalation moves it onto channels the model scores
+> lower. That is the honest current state, and the README already promises to report it:
+> *"if C turns out to be roughly equal to B, that gets reported too."* Say so plainly — it is a
+> far better answer to "how do you know it works?" than a number nobody can derive. Then say
+> what would change it: a live `GEMINI_API_KEY` (RA-24), which turns Arm C's copy into
+> LLM-generated messages the model rewards, and a channel term that can tell an appropriate
+> channel from a worse one."*
 
 ---
 

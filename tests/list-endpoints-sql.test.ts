@@ -234,7 +234,9 @@ describe('Foreign-key indexes exist on the bootstrapped schema (RA-19)', () => {
       [
         'idx_actions_journey',
         'idx_audit_journey',
+        'idx_failures_arm',
         'idx_failures_customer',
+        'idx_journeys_arm',
         'idx_journeys_customer',
         'idx_journeys_failure',
       ].sort()

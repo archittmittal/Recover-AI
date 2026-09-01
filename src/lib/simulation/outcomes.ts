@@ -29,8 +29,16 @@ import {
 export interface PendingOutreach {
   journeyId: string;
   actionId: string;
-  /** Seeded and stable across re-seeds (`fail_0000000000000001`), unlike the nanoid journey id. */
+  /** Seeded and stable across re-seeds (`fail_C000000000000001`), unlike the nanoid journey id. */
   failureId: string;
+  /**
+   * Cohort-invariant identity of this failure: the same synthetic customer's same failure has
+   * the same key in every experiment arm (RA-22). Drawing on this rather than on `failureId`
+   * gives the arms common random numbers — arm B and arm C see the *same* uniform draw for the
+   * same customer, so the difference between them is the coefficients the agent earned and not
+   * which arm got luckier. At n=50 per arm, independent draws would swamp the effect entirely.
+   */
+  simulationKey: string;
   amountAtRisk: number;
   errorReason: string;
   attemptNumber: number;
@@ -64,9 +72,12 @@ export function deriveOutcomeSeed(simulationSeed: number, key: string): number {
   return hash >>> 0;
 }
 
-/** The natural key for one draw: this failure, this attempt. Never the journey's random id. */
+/**
+ * The natural key for one draw: this simulated customer's failure, this attempt. Never the
+ * journey's random id, and never the arm-specific failure id — see `simulationKey`.
+ */
 export function outcomeKey(row: PendingOutreach): string {
-  return `${row.failureId}:attempt:${row.attemptNumber}`;
+  return `${row.simulationKey || row.failureId}:attempt:${row.attemptNumber}`;
 }
 
 /**
@@ -103,6 +114,7 @@ export function decideOutcomes(
       ...decision,
       journeyId: row.journeyId,
       actionId: row.actionId,
+      // Unique per arm (failureId is arm-specific) even though the draw is shared.
       paymentId: `pay_sim_${row.failureId}_a${row.attemptNumber}`,
       amountRecovered: row.amountAtRisk,
     };
@@ -127,6 +139,7 @@ export async function collectPendingOutreach(): Promise<PendingOutreach[]> {
       journeyId: recoveryJourneys.id,
       actionId: recoveryActions.id,
       failureId: paymentFailures.id,
+      simulationKey: paymentFailures.simulationKey,
       amountAtRisk: recoveryJourneys.amountAtRisk,
       errorReason: paymentFailures.errorReason,
       attemptNumber: recoveryActions.attemptNumber,
@@ -155,6 +168,7 @@ export async function collectPendingOutreach(): Promise<PendingOutreach[]> {
     journeyId: r.journeyId,
     actionId: r.actionId,
     failureId: r.failureId,
+    simulationKey: r.simulationKey,
     amountAtRisk: r.amountAtRisk,
     errorReason: r.errorReason,
     attemptNumber: r.attemptNumber,

@@ -58,7 +58,9 @@ export const BASE_RATE_BY_ERROR_REASON: Readonly<Record<string, number>> = {
   insufficient_funds: 0.34, // intent exists; recovery waits on the customer's balance, not their will
   payment_cancelled: 0.3, // hesitation at checkout — persuadable, but the doubt is real
   card_declined: 0.28, // issuer-side refusal; often needs a different instrument
+  checkout_abandonment: 0.42, // no instrument was ever declined; the customer simply left
   card_expired: 0.22, // requires the customer to fetch and enter a new card
+  invoice_overdue: 0.26, // nothing is broken — the payment is waiting on someone's process
   mandate_inactive: 0.18, // re-authorising an e-mandate is a multi-step banking flow
   bank_account_invalid: 0.12, // the account itself is wrong; nearly always needs support contact
 };

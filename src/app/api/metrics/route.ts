@@ -26,6 +26,25 @@ export interface FailureTypeMetric {
   recoveryRatePct: number;
 }
 
+/** One experiment arm's measured result (RA-22). Every field is computed from that arm's rows. */
+export interface ArmMetric {
+  arm: 'A' | 'B' | 'C';
+  label: string;
+  description: string;
+  journeyCount: number;
+  atRiskPaise: number;
+  recoveredPaise: number;
+  recoveryRatePct: number;
+}
+
+export interface BaselineComparison {
+  arms: ArmMetric[];
+  /** Arm C − Arm B, in percentage points. Negative when the agent underperformed the baseline. */
+  netLiftPct: number;
+  /** True once every arm has journeys; until then the comparison is not yet meaningful. */
+  isMeasurable: boolean;
+}
+
 /** Where the numbers on this response came from — see the dashboard's simulation notice. */
 export interface MetricsProvenance {
   mode: 'mock' | 'live';
@@ -72,7 +91,11 @@ export async function GET() {
           )
         `,
       })
-      .from(recoveryJourneys);
+      .from(recoveryJourneys)
+      // The headline is the product's arm. Arms A and B exist to be compared against, not to be
+      // averaged into the number the product reports about itself; blending them would drag
+      // every KPI toward a control that deliberately does less.
+      .where(eq(recoveryJourneys.arm, 'C'));
 
     const totalJourneys = summary?.totalJourneys ?? 0;
     const totalAtRiskPaise = summary?.totalAtRiskPaise ?? 0;
@@ -88,10 +111,13 @@ export async function GET() {
     const optOutRatePct =
       totalJourneys > 0 ? Number(((optedOutCount / totalJourneys) * 100).toFixed(1)) : 0;
 
+    // Null when nothing has been recovered yet, rather than the 18-minute "realistic default
+    // average" that used to stand here. A plausible-looking number with no run behind it is the
+    // same defect as the hardcoded baseline this endpoint just stopped reporting (RA-22).
     const avgRecoveryTimeMinutes =
       summary?.avgRecoveryDurationMinutes != null
         ? Math.round(summary.avgRecoveryDurationMinutes)
-        : 18; // realistic default average
+        : null;
 
     // Channel Metrics: attempt/delivery/conversion counts grouped in SQL.
     const channels: ('whatsapp' | 'sms' | 'voice' | 'email')[] = ['whatsapp', 'sms', 'voice', 'email'];
@@ -222,10 +248,48 @@ export async function GET() {
       .orderBy(desc(auditLogs.createdAt))
       .limit(10);
 
-    const baselineArmARate = 0;
-    const baselineArmBRate = 31.5;
-    const armCRate = recoveryRatePct;
-    const liftOverBaseline = Number((armCRate - baselineArmBRate).toFixed(1));
+    // Three-arm comparison (RA-22). Every rate below is SUM(recovered)/SUM(at_risk) over that
+    // arm's own journeys — the same expression the headline uses — so no numeric literal stands
+    // in for a measurement. Arm A's rate is 0 because it never contacts anyone, not because a
+    // zero was typed here; if a journey in arm A ever recovered, this would report it.
+    const armAgg = await db
+      .select({
+        arm: recoveryJourneys.arm,
+        journeyCount: sql<number>`COUNT(*)`,
+        atRiskPaise: sql<number>`COALESCE(SUM(${recoveryJourneys.amountAtRisk}), 0)`,
+        recoveredPaise: sql<number>`COALESCE(SUM(${recoveryJourneys.amountRecovered}), 0)`,
+      })
+      .from(recoveryJourneys)
+      .groupBy(recoveryJourneys.arm);
+
+    const armDefinitions: { arm: 'A' | 'B' | 'C'; label: string; description: string }[] = [
+      { arm: 'A', label: 'A · No agent', description: 'Detected and recorded; never contacted.' },
+      { arm: 'B', label: 'B · Rules-only dunning', description: 'Fixed cadence, one template, no LLM.' },
+      { arm: 'C', label: 'C · RecoverAI', description: 'Classification, per-failure strategy, personalised copy, escalation.' },
+    ];
+
+    const arms: ArmMetric[] = armDefinitions.map((definition) => {
+      const row = armAgg.find((a) => a.arm === definition.arm);
+      const atRiskPaise = row?.atRiskPaise ?? 0;
+      const recoveredPaise = row?.recoveredPaise ?? 0;
+      return {
+        ...definition,
+        journeyCount: row?.journeyCount ?? 0,
+        atRiskPaise,
+        recoveredPaise,
+        recoveryRatePct:
+          atRiskPaise > 0 ? Number(((recoveredPaise / atRiskPaise) * 100).toFixed(1)) : 0,
+      };
+    });
+
+    const armB = arms.find((a) => a.arm === 'B');
+    const armC = arms.find((a) => a.arm === 'C');
+    const isMeasurable = arms.every((a) => a.journeyCount > 0);
+    // Reported signed. If the agent lands below the baseline, that is the result, and clamping
+    // it to zero would be picking the framing after the fact — the thing the arms exist to stop.
+    const netLiftPct = Number(
+      ((armC?.recoveryRatePct ?? 0) - (armB?.recoveryRatePct ?? 0)).toFixed(1)
+    );
 
     return NextResponse.json({
       success: true,
@@ -247,11 +311,10 @@ export async function GET() {
           avgRecoveryTimeMinutes,
         },
         baselineComparison: {
-          armA_noAgentPct: baselineArmARate,
-          armB_rulesOnlyDunningPct: baselineArmBRate,
-          armC_recoverAiPct: armCRate,
-          netLiftPct: liftOverBaseline > 0 ? liftOverBaseline : 0,
-        },
+          arms,
+          netLiftPct,
+          isMeasurable,
+        } satisfies BaselineComparison,
         channelMetrics,
         failureTypeMetrics,
         strategyMetrics,
