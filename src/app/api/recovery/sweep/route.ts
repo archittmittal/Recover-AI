@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { runCheckoutAbandonmentSweep } from '@/lib/recovery/abandonment-sweep';
 import { recoveryCoordinator } from '@/lib/recovery/coordinator';
 import { getSimulationSeed, isLive } from '@/lib/config';
@@ -6,23 +6,11 @@ import { runSimulatedOutcomes } from '@/lib/simulation/outcomes';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(req: NextRequest) {
+// Authorization (dashboard session or cron secret, failing closed if the
+// secret is unconfigured) is enforced in src/proxy.ts before this handler
+// ever runs — see RA-05.
+export async function POST() {
   try {
-    // Optional cron/shared-secret check if configured in environment
-    const configuredSecret = process.env.RECOVERY_SWEEP_SECRET || process.env.CRON_SECRET;
-    if (configuredSecret) {
-      const authHeader = req.headers.get('authorization');
-      const secretHeader = req.headers.get('x-recovery-secret');
-      const token = authHeader?.replace(/^Bearer\s+/i, '') || secretHeader;
-
-      if (!token || token !== configuredSecret) {
-        return NextResponse.json(
-          { success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid or missing sweep secret' } },
-          { status: 401 }
-        );
-      }
-    }
-
     const result = await runCheckoutAbandonmentSweep();
 
     // The sweep dispatches attempt 1 exactly as a batch run does, so its outreach gets its

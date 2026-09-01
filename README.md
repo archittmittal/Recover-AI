@@ -166,7 +166,13 @@ cp .env.example .env   # add your Razorpay test keys + Gemini API key
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000) and sign in.
+
+Every page and every API route except the Razorpay webhook and the demo simulator requires a
+dashboard session (RA-05) — `/api/customers` returns real customer names, emails and phone
+numbers, and `/api/recovery/trigger` makes the system contact people, so neither is anonymous.
+Set `SESSION_SECRET`, `DASHBOARD_USERNAME` and `DASHBOARD_PASSWORD` in `.env` before first run;
+`.env.example` documents all three.
 
 No Docker, no external database — SQLite is a single committed file. Zero-config by design, so evaluating this takes minutes, not a setup session.
 
