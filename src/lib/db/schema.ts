@@ -110,7 +110,10 @@ export const auditLogs = sqliteTable(
   'audit_logs',
   {
     id: text('id').primaryKey(), // prefix: audit_
-    journeyId: text('journey_id').notNull().references(() => recoveryJourneys.id),
+    // Nullable since RA-31: most events belong to a journey, but a process-wide one — the demo
+    // clock being advanced — belongs to no journey, and attaching it to an arbitrary one would
+    // put a false entry in that customer's timeline.
+    journeyId: text('journey_id').references(() => recoveryJourneys.id),
     actionId: text('action_id').references(() => recoveryActions.id),
     actor: text('actor').notNull(), // 'system' | 'agent' | 'customer' | 'razorpay'
     eventType: text('event_type').notNull(),

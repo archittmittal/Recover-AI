@@ -24,19 +24,40 @@ export class FixedClock implements Clock {
   }
 }
 
+/**
+ * A clock that runs at real speed but offset from real time, so a demo can cross a boundary
+ * that would otherwise take days to reach — the 8AM-7PM IST contact window, or the T+1h /
+ * T+24h / T+72h retry ladder (RA-31).
+ *
+ * Offset rather than frozen, deliberately: a frozen clock would make every timestamp in a
+ * demo identical and hide the ordering an evaluator is being asked to read.
+ */
 export class VirtualClock implements Clock {
   private offsetMs = 0;
-  private baseTime: Date | null = null;
+
+  constructor(offsetMs = 0) {
+    this.offsetMs = offsetMs;
+  }
 
   setOffset(ms: number) {
     this.offsetMs = ms;
-    this.baseTime = null;
+  }
+
+  getOffset(): number {
+    return this.offsetMs;
   }
 
   setTime(date: Date | string) {
     const target = typeof date === 'string' ? new Date(date) : date;
     this.offsetMs = target.getTime() - Date.now();
-    this.baseTime = null;
+  }
+
+  /** Moves the clock forward by `ms`. Negative values are rejected — see `demo-clock.ts`. */
+  advanceBy(ms: number) {
+    if (ms < 0) {
+      throw new Error('[VirtualClock] Time only moves forward. Reseed to return to real time.');
+    }
+    this.offsetMs += ms;
   }
 
   now(): Date {
@@ -44,15 +65,23 @@ export class VirtualClock implements Clock {
   }
 }
 
-// Singleton pattern for the clock
-let globalClock: Clock = new SystemClock();
+/**
+ * The clock is a process-wide singleton held on `globalThis`, for the same reason the database
+ * connection is: Next.js re-evaluates route modules on hot reload, and a module-scoped `let`
+ * would silently hand a second copy of the clock to half the routes — so the simulator would
+ * advance a clock the coordinator never reads.
+ */
+const globalForClock = globalThis as unknown as { recoverAiClock: Clock | undefined };
 
 export function getClock(): Clock {
-  return globalClock;
+  if (!globalForClock.recoverAiClock) {
+    globalForClock.recoverAiClock = new SystemClock();
+  }
+  return globalForClock.recoverAiClock;
 }
 
 export function setClock(clock: Clock) {
-  globalClock = clock;
+  globalForClock.recoverAiClock = clock;
 }
 
 /**

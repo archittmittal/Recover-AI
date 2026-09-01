@@ -12,7 +12,7 @@
 | :--- | :--- | :--- | :--- |
 | **0:00 – 0:45** | **Hook & The Problem** | Title slide / Hero Dashboard with ₹ at Risk | Razorpay merchants lose 15–20% of GMV to avoidable declines. Static dunning has low conversion; non-compliant outreach risks heavy penalties. |
 | **0:45 – 1:45** | **Executive Dashboard & 3-Arm Lift** | Navigate `/` → Highlight Metrics Cards & 3-Arm Chart | 6 Real-time KPIs. Three-arm comparison over one seeded batch, every rate measured from that arm's own journeys. **Read the lift off the screen — do not quote a number from this script.** |
-| **1:45 – 2:45** | **Multi-Channel Escalation & Audit** | Click "Customers" → Open "Audit Timeline" Modal | WhatsApp (Attempt 1) → SMS (Attempt 2) → AI Voice (Attempt 3). Expand immutable audit logs showing raw payloads and Gemini reasoning. |
+| **1:45 – 2:45** | **Multi-Channel Escalation, Contact Hours & Audit** | `/simulator` → advance the clock to 21:00 IST, run the agent, advance to 09:00 → "Customers" → Audit Timeline | WhatsApp (Attempt 1) → SMS (Attempt 2) → AI Voice (Attempt 3). Outreach **defers** after 19:00 IST with a logged reason, then resumes in the morning. Immutable audit logs, including the `clock_advanced` rows. |
 | **2:45 – 3:45** | **Interactive Sandbox & Stopping Rules** | Navigate `/simulator` → Select customer → Trigger "Pay Now" & "STOP" | Dual-panel testbed. Live payment link settlement; instant STOP opt-out compliance (Stopping Rule #2); live IST RBI contact hours clock (8AM–7PM). |
 | **3:45 – 4:30** | **OpenSSF Security & Architecture** | Show test suite (`npm test`) & CI workflows | Timing-safe HMAC verification (`crypto.timingSafeEqual`), DPDPA zero PII in prompts, append-only audit trail, 21/21 automated invariant tests. |
 | **4:30 – 5:00** | **Summary & Business ROI** | Return to Overview Dashboard | RecoverAI turns failed payments into settled revenue without risking customer trust or compliance. |
@@ -60,8 +60,26 @@
 
 ---
 
-### [1:45 – 2:45] Multi-Channel Escalation & Immutable Audit Ledger
-> *(Click "Customers & Audit" → Click "Audit Timeline" on Aarav Sharma)*
+### [1:45 – 2:45] Contact Hours, Escalation & the Immutable Audit Ledger
+> *(Start on `/simulator`. Use the **Simulated Clock** controls — RA-31.)*
+>
+> *"The compliance story is the part you cannot see in a five-minute demo, because it plays out
+> over days. So we move the clock instead of faking the result.*
+>
+> **1. Jump to 21:00 IST** — click *21:00 (after hours)*, then *Run AI Recovery Agent*.
+> *"It is now past nine at night. The RBI Fair Practices contact window closes at 7pm, so the
+> agent dispatches nothing. Every deferral is logged with the rule that fired — it did not fail,
+> it declined."*
+>
+> **2. Jump to 09:00 the next morning** — click *09:00 (next morning)*, then *Run AI Recovery Agent*.
+> *"Same queue, same agent, twelve hours later. Now it dispatches — WhatsApp first, then SMS on
+> the second attempt, then a voice call on the third."*
+>
+> **3. Open the audit trail** — *(Click "Customers & Audit" → "Audit Timeline" on Aarav Sharma)*
+> *"Every jump I just made is in the ledger as a `clock_advanced` row — who moved time, from
+> when, to when. The clock only moves forward, so nothing can be replayed to inflate a number,
+> and the only way back to real time is reseeding, which deletes the journeys first. You are
+> looking at simulated time, and the trail says so."*
 > *"Every customer journey follows an escalation ladder:
 > 1. **Attempt 1**: WhatsApp Interactive Message with a direct Razorpay payment link.
 > 2. **Attempt 2**: Personalized SMS with regional language support.

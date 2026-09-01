@@ -141,7 +141,7 @@
 
 | # | Task | Status | Owner | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| 8.1 | Injectable `Clock` + virtual clock controls | ✅ | Agent | `src/lib/utils/time.ts` with `Clock`, `SystemClock`, `FixedClock`, `VirtualClock` |
+| 8.1 | Injectable `Clock` + virtual clock controls | ✅ | Agent | `src/lib/utils/time.ts` + `src/lib/utils/demo-clock.ts`; `POST /api/simulator/clock`, forward-only, `clock_advanced` audit row, simulator control (RA-31) |
 | 8.2 | Documented customer response model | ✅ | Agent | `src/lib/simulation/response-model.ts` + `docs/SIMULATION_MODEL.md`; coefficients are declared estimates, not benchmark citations (RA-23) |
 | 8.3 | Baseline comparison harness (arms A/B/C) | ✅ | Agent | `payment_failures.arm` cohorts + per-arm rates in `src/app/api/metrics/route.ts`; all three measured from their own journeys, C − B reported signed (RA-22) |
 | 8.4 | Checkout abandonment sweep job | ✅ | Agent | `src/lib/recovery/abandonment-sweep.ts` & `/api/recovery/sweep` |
