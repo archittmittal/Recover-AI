@@ -1,11 +1,17 @@
 import { NextResponse } from 'next/server';
 import { seedDatabase } from '@/lib/db/seed';
+import { resetDemoClock } from '@/lib/utils/demo-clock';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST() {
   try {
     const count = await seedDatabase();
+
+    // Reseeding is the only way back to real time (RA-31). The demo clock refuses to move
+    // backwards on its own because rewinding past a fired attempt would let the same outreach
+    // replay; a reseed deletes those rows first, so there is nothing left to replay.
+    resetDemoClock();
     return NextResponse.json({
       success: true,
       data: {

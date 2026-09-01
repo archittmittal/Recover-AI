@@ -36,6 +36,7 @@ const GEN = {
   PERF_INDEXES: 3,         // 0003 — idx_* indexes
   TEMPLATE_FALLBACK: 4,    // 0004 — recovery_actions.is_template_fallback
   EXPERIMENT_ARMS: 5,      // 0005 — payment_failures.arm/simulation_key, recovery_journeys.arm
+  NULLABLE_AUDIT_JOURNEY: 6, // 0006 — audit_logs.journey_id becomes nullable
 } as const;
 
 /**
@@ -64,10 +65,17 @@ function detectLegacyGeneration(sqlite: Database.Database): number | null {
   // Already has a ledger: Drizzle can take it from here.
   if (hasTable(MIGRATIONS_TABLE)) return null;
 
-  const hasColumn = (table: string, column: string): boolean =>
-    (sqlite.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some(
+  const columnInfo = (table: string, column: string): { name: string; notnull: number } | undefined =>
+    (sqlite.prepare(`PRAGMA table_info(${table})`).all() as { name: string; notnull: number }[]).find(
       (c) => c.name === column
     );
+
+  const hasColumn = (table: string, column: string): boolean => columnInfo(table, column) !== undefined;
+
+  // 0006 adds no column — it relaxes one. A generation probe therefore has to read the
+  // constraint rather than the column list, or every database would look pre-0006 forever and
+  // the table rebuild would replay on each boot.
+  const isNullable = (table: string, column: string): boolean => columnInfo(table, column)?.notnull === 0;
 
   // Every migration that alters a table needs a probe here, checked newest-first, and the
   // floor must be the base-tables generation. Stamping a database at the generation of a
@@ -82,6 +90,7 @@ function detectLegacyGeneration(sqlite: Database.Database): number | null {
   // leaves the database permanently stale — the exact failure this adoption path exists to
   // repair.
   const when = generationTimestamps();
+  if (isNullable('audit_logs', 'journey_id')) return when[GEN.NULLABLE_AUDIT_JOURNEY];
   if (hasColumn('recovery_journeys', 'arm')) return when[GEN.EXPERIMENT_ARMS];
   if (hasColumn('recovery_actions', 'is_template_fallback')) return when[GEN.TEMPLATE_FALLBACK];
   if (hasColumn('customers', 'razorpay_customer_id')) return when[GEN.RAZORPAY_CUSTOMER_ID];
