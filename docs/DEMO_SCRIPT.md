@@ -40,15 +40,19 @@
 > The metric that matters is the **Net Lift (C minus B)**, and every one of those three rates is computed from that arm's own journeys — there is no constant anywhere in the metrics route."*
 
 > **Presenter note — read the number off the screen, whatever it says.**
-> As of the run recorded in `docs/SIMULATION_MODEL.md`, C − B is **negative**: in mock mode Arm C
-> sends the same template copy as Arm B, so the one coefficient that rewards the agent's
-> messaging never fires, while its channel escalation moves it onto channels the model scores
-> lower. That is the honest current state, and the README already promises to report it:
-> *"if C turns out to be roughly equal to B, that gets reported too."* Say so plainly — it is a
-> far better answer to "how do you know it works?" than a number nobody can derive. Then say
-> what would change it: a live `GEMINI_API_KEY` (RA-24), which turns Arm C's copy into
-> LLM-generated messages the model rewards, and a channel term that can tell an appropriate
-> channel from a worse one."*
+> Over 25 replications (`npm run eval:arms`, recorded in `docs/SIMULATION_MODEL.md`), C − B is
+> **−7.1 points by amount, −3.4 by journeys** — negative in 20 of 25 runs and positive in none.
+> Say it plainly: *"measured against its own baseline, in mock mode, the agent currently loses,
+> and here is exactly why."* Two reasons, both structural: without a live `GEMINI_API_KEY` Arm C
+> sends the identical template Arm B sends, so the one coefficient that rewards the agent's
+> messaging never fires; and the model's channel term is a single unconditional ranking, so
+> escalating off WhatsApp can only cost. In this configuration the experiment **cannot** produce
+> a positive result — the best C − B across 25 seeds is exactly 0.0.
+>
+> That is a far better answer to *"how do you know it works?"* than a number nobody can derive.
+> The README already promises it: *"if C turns out to be roughly equal to B, that gets reported
+> too."* Then say what would change it, and that no coefficient was touched after the result
+> came in."*
 
 ---
 

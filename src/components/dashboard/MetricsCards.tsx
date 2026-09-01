@@ -34,9 +34,11 @@ export interface ArmMetricData {
   label: string;
   description: string;
   journeyCount: number;
+  resolvedCount: number;
   atRiskPaise: number;
   recoveredPaise: number;
   recoveryRatePct: number;
+  recoveryRateByCountPct: number;
 }
 
 export interface BaselineComparisonData {

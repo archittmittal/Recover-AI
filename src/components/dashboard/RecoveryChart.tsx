@@ -40,6 +40,7 @@ export function RecoveryChart({ failureMetrics, baseline }: RecoveryChartProps) 
     arm: item.label,
     description: item.description,
     rate: item.recoveryRatePct,
+    countRate: item.recoveryRateByCountPct,
     n: item.journeyCount,
     fill: armFill[item.arm],
   }));
@@ -130,7 +131,10 @@ export function RecoveryChart({ failureMetrics, baseline }: RecoveryChartProps) 
                   {item.arm}
                 </span>
                 <span className="font-bold text-zinc-900 dark:text-zinc-50">
-                  {item.rate}% <span className="font-normal text-zinc-400">n={item.n}</span>
+                  {item.rate}%{' '}
+                  <span className="font-normal text-zinc-400" title="by journeys resolved">
+                    ({item.countRate}% of {item.n})
+                  </span>
                 </span>
               </div>
               <div className="w-full h-2.5 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">

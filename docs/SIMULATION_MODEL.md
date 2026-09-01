@@ -159,34 +159,57 @@ latency, and would make the C − B delta measure nothing.
 
 ## Current measured result
 
-Recorded 2026-09-01, seed `20260823`, `RECOVERAI_MODE=mock`, one seeded batch run to exhaustion:
+Reproduce with `npm run eval:arms` — 25 replications, seeds from `20260823` in steps of 7919,
+24-day window, `RECOVERAI_MODE=mock`. Recorded 2026-09-01.
 
-| Arm | Recovery rate (by amount) | n |
-| :--- | ---: | ---: |
-| A · no agent | 0.0% | 50 |
-| B · rules-only dunning | 22.7% | 50 |
-| C · full agent | 21.6% | 50 |
+| Arm | By amount | By journeys | Attempts / journey |
+| :--- | ---: | ---: | ---: |
+| A · no agent | 0.0% ± 0.0 | 0.0% ± 0.0 | 0.00 |
+| B · rules-only dunning | 42.4% ± 12.2 | 46.8% ± 6.9 | 2.23 |
+| C · full agent | 35.3% ± 10.7 | 43.4% ± 7.0 | 2.28 |
 
-**C − B = −1.1 points.** The agent currently measures slightly *worse* than a cron job with one
-template. Reported here because the README promises it: *"if C turns out to be roughly equal to B,
-that gets reported too."*
+| C − B | Mean | SE | Range | t |
+| :--- | ---: | ---: | :--- | ---: |
+| by amount | **−7.07 pts** | 1.32 | [−21.0, 0.0] | −5.4 |
+| by journeys | **−3.44 pts** | 0.56 | [−10.0, 0.0] | −6.1 |
 
-Two identified causes, neither of them a defect in the arms:
+Negative in 20 of 25 replications; **positive in none.**
 
-1. **Mock mode nullifies the personalisation coefficient.** Without a live `GEMINI_API_KEY`
-   (RA-24) Arm C ships the same deterministic template as Arm B, so `is_template_fallback` is
-   true in both arms and the ×1.18 term — the only coefficient that rewards the agent's messaging
-   — never fires in either.
-2. **The model's channel term is unconditional, so escalation can only lose.** Arm C moves to SMS
-   (×0.78) and voice (×0.90) on attempts 2 and 3 while Arm B stays on WhatsApp (×1.00), and
-   `invoice_reminder` opens on email (×0.55) for the ten B2B invoices. The model has no notion of
-   an appropriate channel for a context, nor of renewed reach after an ignored message, so a
-   channel switch is scored as pure loss.
+**The agent measures worse than a cron job with one template, and the deficit is not noise.**
+Reported because the README promises it: *"if C turns out to be roughly equal to B, that gets
+reported too."*
 
-**The coefficients were not changed after seeing this result**, and this section is the reason to
-be suspicious of anyone who does. Cause 2 is a real weakness in the model rather than a finding
-about the agent, and fixing it means a channel term that varies by segment and failure type —
-declared before the next run, not after it.
+Three things this replication established that a single run did not:
+
+1. **A single run understates the rates badly.** The first figure recorded here was B 22.7% /
+   C 21.6% from an 8-day window. `invoice_reminder` schedules attempts at +24h, +168h and +336h,
+   so a week truncates the ladder mid-flight. Run to 24 days the same arms converge near 42% and
+   35%. Any comparison over a window shorter than the longest declared cadence is measuring the
+   window, not the arms.
+2. **The delta is systematic, not sampling noise.** t ≈ −5 to −6 over 25 replications. Common
+   random numbers are doing their job: paired arms make the difference far tighter than the arms
+   themselves (SE 1.3 against an arm SD of 12).
+3. **In mock mode the comparison is structurally degenerate, and the range shows it.** The best
+   C − B across 25 seeds is *exactly* 0.0, never above. That is the fingerprint of a pointwise
+   ordering: with no LLM key, Arm C's probability is ≤ Arm B's for every single draw — the
+   personalisation term is off in both arms, and every channel the agent escalates to is scored
+   below WhatsApp, which is where Arm B stays. Under common random numbers, C therefore recovers
+   a strict subset of what B recovers. **In this configuration the experiment cannot produce a
+   positive result, whatever the agent does.**
+
+That last point is the honest reading: today the harness measures the arms correctly and the
+model cannot reward the thing the agent is for. Two changes make it informative, and both must
+be declared before the next run rather than after it:
+
+- **A live `GEMINI_API_KEY` (RA-24).** Personalisation (×1.18) is the only term that can lift C
+  above B, and it never fires while every message is the template fallback.
+- **A channel term that varies by context.** Today it is one unconditional ranking, so email to
+  a B2B invoice is scored the same as email to a B2C card decline, and switching channel after
+  an ignored message earns nothing for reaching the customer somewhere new. Escalation is
+  therefore pure loss by construction — a weakness in the model, not a finding about the agent.
+
+**No coefficient was changed after seeing these numbers**, and this section exists so that anyone
+who does change one has to explain the before and after.
 
 ## Seeding and reproducibility
 

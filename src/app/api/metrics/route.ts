@@ -32,9 +32,18 @@ export interface ArmMetric {
   label: string;
   description: string;
   journeyCount: number;
+  resolvedCount: number;
   atRiskPaise: number;
   recoveredPaise: number;
+  /** Rupee-weighted: SUM(recovered)/SUM(at_risk). The headline, and the noisier of the two. */
   recoveryRatePct: number;
+  /**
+   * Journey-weighted: resolved/total. Reported alongside because the batch is heavy-tailed —
+   * ten B2B invoices of up to ₹75,000 dominate the rupee figure, and across seeds the
+   * amount-weighted rate varies about twice as much as the count-weighted one. A comparison
+   * quoted only in the noisier metric invites reading a swing as a result.
+   */
+  recoveryRateByCountPct: number;
 }
 
 export interface BaselineComparison {
@@ -256,6 +265,7 @@ export async function GET() {
       .select({
         arm: recoveryJourneys.arm,
         journeyCount: sql<number>`COUNT(*)`,
+        resolvedCount: sql<number>`SUM(CASE WHEN ${recoveryJourneys.status} = 'resolved' THEN 1 ELSE 0 END)`,
         atRiskPaise: sql<number>`COALESCE(SUM(${recoveryJourneys.amountAtRisk}), 0)`,
         recoveredPaise: sql<number>`COALESCE(SUM(${recoveryJourneys.amountRecovered}), 0)`,
       })
@@ -272,13 +282,18 @@ export async function GET() {
       const row = armAgg.find((a) => a.arm === definition.arm);
       const atRiskPaise = row?.atRiskPaise ?? 0;
       const recoveredPaise = row?.recoveredPaise ?? 0;
+      const journeyCount = row?.journeyCount ?? 0;
+      const resolvedCount = row?.resolvedCount ?? 0;
       return {
         ...definition,
-        journeyCount: row?.journeyCount ?? 0,
+        journeyCount,
+        resolvedCount,
         atRiskPaise,
         recoveredPaise,
         recoveryRatePct:
           atRiskPaise > 0 ? Number(((recoveredPaise / atRiskPaise) * 100).toFixed(1)) : 0,
+        recoveryRateByCountPct:
+          journeyCount > 0 ? Number(((resolvedCount / journeyCount) * 100).toFixed(1)) : 0,
       };
     });
 
