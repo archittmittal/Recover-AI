@@ -1,13 +1,29 @@
 import { drizzle, BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { drizzle as drizzleLibsql, LibSQLDatabase } from 'drizzle-orm/libsql';
+import { createClient } from '@libsql/client';
+import { BaseSQLiteDatabase } from 'drizzle-orm/sqlite-core';
 import Database from 'better-sqlite3';
 import * as schema from './schema';
 import path from 'path';
 import fs from 'fs';
 
+/**
+ * Two drivers, chosen by URL scheme (RA-28).
+ *
+ * `better-sqlite3` writes to a local file, which is the right thing for development and
+ * completely wrong for a serverless deployment: the filesystem is ephemeral and per-instance, so
+ * a Vercel deploy would appear to work and then silently lose data mid-demo. `libsql:`/`https:`
+ * URLs therefore go to a Turso client instead.
+ *
+ * Local behaviour is deliberately untouched — same driver, same WAL pragma, same
+ * migrate-on-connect, same legacy adoption — so the zero-config story still holds.
+ */
+type SchemaDatabase = BaseSQLiteDatabase<'sync' | 'async', unknown, typeof schema>;
+
 const globalForDb = globalThis as unknown as {
   sqlite: Database.Database | undefined;
-  db: BetterSQLite3Database<typeof schema> | undefined;
+  db: SchemaDatabase | undefined;
 };
 
 const MIGRATIONS_FOLDER = path.join(process.cwd(), 'src/lib/db/migrations');
@@ -151,18 +167,24 @@ function stampLegacyGeneration(sqlite: Database.Database, when: number): void {
   );
 }
 
-function getOrCreateDb(): BetterSQLite3Database<typeof schema> {
-  if (globalForDb.db) {
-    return globalForDb.db;
-  }
+/** How a DATABASE_URL is served. Exported so tests and the deploy check can assert on it. */
+export type DbDriver = 'better-sqlite3' | 'libsql';
 
-  const dbUrl = process.env.DATABASE_URL || 'file:./data/recoverai.db';
-  if (!dbUrl.startsWith('file:')) {
-    throw new Error(
-      `[db] Unsupported DATABASE_URL scheme: "${dbUrl.split(':')[0]}:". ` +
-        `This build targets better-sqlite3 and accepts only "file:" URLs.`
-    );
-  }
+export function resolveDriver(dbUrl: string): DbDriver {
+  if (dbUrl.startsWith('file:')) return 'better-sqlite3';
+  if (dbUrl.startsWith('libsql://') || dbUrl.startsWith('https://')) return 'libsql';
+
+  // Loudly, rather than mangling it into a filename. The old code stripped a `file:` prefix that
+  // was not there and handed `libsql://…` to better-sqlite3, which dutifully created a local
+  // file with that name — the documented Turso deployment "worked" and wrote to nowhere.
+  throw new Error(
+    `[db] Unsupported DATABASE_URL scheme: "${dbUrl.split(':')[0]}:". ` +
+      `Use "file:" for a local SQLite file, or "libsql://" / "https://" for Turso.`
+  );
+}
+
+/** Local file database: unchanged from before RA-28, including migrate-on-connect. */
+function createLocalDb(dbUrl: string): SchemaDatabase {
   const dbPath = dbUrl.replace(/^file:/, '');
   const dbDir = path.dirname(dbPath);
 
@@ -180,7 +202,7 @@ function getOrCreateDb(): BetterSQLite3Database<typeof schema> {
     stampLegacyGeneration(sqlite, legacyGeneration);
   }
 
-  const dbInstance = drizzle(sqlite, { schema });
+  const dbInstance: BetterSQLite3Database<typeof schema> = drizzle(sqlite, { schema });
 
   // Migrations are the single source of schema truth. Applying them on connect keeps the
   // zero-config promise (no separate `db:migrate` step) while letting an existing database
@@ -188,12 +210,78 @@ function getOrCreateDb(): BetterSQLite3Database<typeof schema> {
   migrate(dbInstance, { migrationsFolder: MIGRATIONS_FOLDER });
 
   globalForDb.sqlite = sqlite;
-  globalForDb.db = dbInstance;
-
   return dbInstance;
 }
 
-export const db = new Proxy({} as BetterSQLite3Database<typeof schema>, {
+/**
+ * Remote libSQL/Turso database.
+ *
+ * Migrations are NOT applied here. On a serverless host every cold start would race every other
+ * cold start to run them, against a database they all share — and a migration is not something to
+ * attempt concurrently from an unknown number of instances. `npm run db:migrate` applies them
+ * once at deploy time instead; `docs/DEPLOYMENT.md` documents that step, and
+ * `verifyRemoteSchema()` below turns a forgotten one into a clear error rather than a confusing
+ * "no such table" at the first request.
+ */
+function createRemoteDb(dbUrl: string): SchemaDatabase {
+  const authToken = process.env.DATABASE_AUTH_TOKEN;
+  if (!authToken) {
+    throw new Error(
+      '[db] DATABASE_URL points at a remote libSQL database but DATABASE_AUTH_TOKEN is unset. ' +
+        'Create a token with `turso db tokens create <database>`.'
+    );
+  }
+
+  const client = createClient({ url: dbUrl, authToken });
+  const dbInstance: LibSQLDatabase<typeof schema> = drizzleLibsql(client, { schema });
+  return dbInstance;
+}
+
+function getOrCreateDb(): SchemaDatabase {
+  if (globalForDb.db) {
+    return globalForDb.db;
+  }
+
+  const dbUrl = process.env.DATABASE_URL || 'file:./data/recoverai.db';
+  const driver = resolveDriver(dbUrl);
+
+  const dbInstance = driver === 'libsql' ? createRemoteDb(dbUrl) : createLocalDb(dbUrl);
+
+  globalForDb.db = dbInstance;
+  return dbInstance;
+}
+
+/**
+ * Confirms a remote database has actually had migrations applied.
+ *
+ * Called by `npm run db:verify` and by the deployment guide, so "I forgot the migrate step"
+ * surfaces as a sentence naming the fix instead of a `no such table: customers` at the first
+ * dashboard request.
+ */
+export async function verifyRemoteSchema(): Promise<{ applied: number; tables: string[] }> {
+  const dbUrl = process.env.DATABASE_URL || '';
+  if (resolveDriver(dbUrl) !== 'libsql') {
+    throw new Error('[db] verifyRemoteSchema is only meaningful for a libsql:// DATABASE_URL.');
+  }
+
+  const client = createClient({ url: dbUrl, authToken: process.env.DATABASE_AUTH_TOKEN });
+  const tables = await client.execute(
+    "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+  );
+  const names = tables.rows.map((r) => String(r.name));
+
+  if (!names.includes(MIGRATIONS_TABLE)) {
+    throw new Error(
+      `[db] The remote database has no ${MIGRATIONS_TABLE} table — migrations have never been ` +
+        'applied. Run `npm run db:migrate` with DATABASE_URL and DATABASE_AUTH_TOKEN set.'
+    );
+  }
+
+  const applied = await client.execute(`SELECT COUNT(*) AS n FROM ${MIGRATIONS_TABLE}`);
+  return { applied: Number(applied.rows[0]?.n ?? 0), tables: names };
+}
+
+export const db = new Proxy({} as SchemaDatabase, {
   get(_target, prop) {
     const instance = getOrCreateDb();
     const val = (instance as unknown as Record<string | symbol, unknown>)[prop];
@@ -201,4 +289,4 @@ export const db = new Proxy({} as BetterSQLite3Database<typeof schema>, {
   },
 });
 
-export type DbClient = BetterSQLite3Database<typeof schema>;
+export type DbClient = SchemaDatabase;

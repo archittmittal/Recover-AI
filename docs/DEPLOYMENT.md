@@ -10,9 +10,14 @@ This guide covers deploying **RecoverAI** to modern serverless and containerized
 | :--- | :--- | :--- |
 | `RAZORPAY_KEY_ID` | Razorpay Key ID (from Razorpay Dashboard > Settings > API Keys) | `rzp_test_...` or `rzp_live_...` |
 | `RAZORPAY_KEY_SECRET` | Razorpay Key Secret | `sec_...` |
-| `RAZORPAY_WEBHOOK_SECRET` | Secret configured on Razorpay Webhook settings | `wh_sec_...` |
-| `GEMINI_API_KEY` | Google Gemini API Key (from Google AI Studio) | `AIzaSy...` |
-| `DATABASE_URL` | SQLite file path or remote Turso/libSQL connection URL | `file:./data/recoverai.db` |
+| `RAZORPAY_WEBHOOK_SECRET` | A secret **you choose** and enter in both places: the Razorpay webhook form and this variable. Razorpay does not issue it and it has no fixed format | any high-entropy string |
+| `GEMINI_API_KEY` | Google Gemini API Key (from Google AI Studio) | `AIza...` |
+| `DATABASE_URL` | `file:` for a local SQLite file, `libsql://` or `https://` for Turso | `file:./data/recoverai.db` |
+| `DATABASE_AUTH_TOKEN` | Turso token. **Required** whenever `DATABASE_URL` is remote; startup fails without it | `turso db tokens create <db>` |
+| `SESSION_SECRET` | Signing key for the dashboard session cookie. Every page and API route except the webhook is behind it (RA-05) | 32+ random bytes |
+| `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD` | Dashboard login | — |
+| `RECOVERAI_MODE` | `mock` (no outbound calls) or `live` (real Razorpay/Gemini) | `mock` |
+| `RECOVERAI_DEMO_MODE` | `true` exposes `/api/simulator/*` on a production build. **Leave unset unless this deployment is a throwaway demo** — those routes are unauthenticated and `/api/simulator/seed` truncates every table | unset |
 | `NEXT_PUBLIC_APP_URL` | Production public URL of the deployment | `https://recoverai.yourdomain.com` |
 
 ---
@@ -34,9 +39,43 @@ sqlite.pragma('journal_mode = WAL');
   ```
 
 ### Option B: Serverless Deployment (Vercel + Turso libSQL)
-- Create a free database on [Turso](https://turso.tech).
-- Set `DATABASE_URL=libsql://your-db-name.turso.io` and `DATABASE_AUTH_TOKEN=your-token`.
-- RecoverAI automatically handles schema migrations on boot.
+
+The driver is chosen from the `DATABASE_URL` scheme (`src/lib/db/index.ts`): `file:` uses
+`better-sqlite3`, `libsql://` and `https://` use `@libsql/client`. Anything else fails at startup
+with a message naming the two it accepts, rather than being silently treated as a filename.
+
+**Migrations are not applied on boot for a remote database.** On a serverless host every cold
+start would race every other cold start to migrate the one shared database. Apply them once, at
+deploy time:
+
+```bash
+# 1. Create the database and a token
+turso db create recoverai
+turso db show recoverai --url          # → libsql://recoverai-<org>.turso.io
+turso db tokens create recoverai       # → the DATABASE_AUTH_TOKEN value
+
+# 2. Apply the migrations from your machine (drizzle.config.ts switches to the
+#    Turso dialect automatically when DATABASE_URL is remote)
+DATABASE_URL=libsql://recoverai-<org>.turso.io \
+DATABASE_AUTH_TOKEN=<token> \
+  npm run db:migrate
+
+# 3. Confirm the schema landed, and optionally seed the demo batch
+DATABASE_URL=libsql://recoverai-<org>.turso.io \
+DATABASE_AUTH_TOKEN=<token> \
+  npm run db:verify                    # add SEED=1 to populate the 150-failure batch
+```
+
+`npm run db:verify` reports how many migrations are applied and which tables exist, so a
+forgotten migrate step surfaces as a sentence naming the fix instead of `no such table:
+customers` at the first dashboard request.
+
+**Then deploy.** Set every variable from §1 in the Vercel project. Leave `RECOVERAI_DEMO_MODE`
+unset unless the deployment is a throwaway demo — with it on, anyone who finds the URL can
+truncate the database.
+
+Local development is unchanged: no `DATABASE_URL` at all still means `file:./data/recoverai.db`,
+created and migrated on first connection with no separate step.
 
 ---
 
@@ -51,13 +90,15 @@ To receive live transaction events and trigger autonomous recovery:
    https://recoverai.yourdomain.com/api/webhooks/razorpay
    ```
 4. Enter a strong secret and save it to your `RAZORPAY_WEBHOOK_SECRET` environment variable.
-5. Subscribe to the following **Active Events**:
-   - `payment.failed` (triggers failure classification and dunning initiation)
-   - `payment.captured` (triggers payment resolution and stops outreach)
-   - `subscription.pending` (triggers mandate recovery)
-   - `subscription.halted` (triggers invoice reminders)
-   - `payment_link.paid` (resolves recovery journeys)
-6. Save and test using Razorpay's **Send Test Webhook** button.
+5. Subscribe to **`payment.failed`** only.
+
+   That is the sole event the handler acts on — `payload.event` is tested once, at
+   `src/app/api/webhooks/razorpay/route.ts:115`. Any other subscribed event is verified,
+   recorded in `webhook_events`, marked `processed`, and has **no effect on any journey**:
+   Razorpay's delivery log shows green while nothing happens. In particular `payment_link.paid`
+   does *not* resolve a recovery journey today, so a customer paying through a recovery link is
+   not reflected on the dashboard by this route.
+6. Trigger a delivery from the dashboard to confirm the wiring end to end.
 
 ---
 
