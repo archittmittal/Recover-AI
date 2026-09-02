@@ -17,7 +17,7 @@ This guide covers deploying **RecoverAI** to modern serverless and containerized
 | `SESSION_SECRET` | Signing key for the dashboard session cookie. Every page and API route except the webhook is behind it (RA-05) | 32+ random bytes |
 | `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD` | Dashboard login | — |
 | `RECOVERAI_MODE` | `mock` (no outbound calls) or `live` (real Razorpay/Gemini) | `mock` |
-| `RECOVERAI_DEMO_MODE` | `true` exposes `/api/simulator/*` on a production build. **Leave unset unless this deployment is a throwaway demo** — those routes are unauthenticated and `/api/simulator/seed` truncates every table | unset |
+| `RECOVERAI_DEMO_MODE` | `true` exposes `/api/simulator/*` on a production build, so a visitor can drive the demo. `/api/simulator/seed` still requires a dashboard session, so the batch cannot be truncated by anyone but you. Leave unset for a deployment handling live Razorpay traffic | unset |
 | `NEXT_PUBLIC_APP_URL` | Production public URL of the deployment | `https://recoverai.yourdomain.com` |
 
 ---
@@ -70,9 +70,10 @@ DATABASE_AUTH_TOKEN=<token> \
 forgotten migrate step surfaces as a sentence naming the fix instead of `no such table:
 customers` at the first dashboard request.
 
-**Then deploy.** Set every variable from §1 in the Vercel project. Leave `RECOVERAI_DEMO_MODE`
-unset unless the deployment is a throwaway demo — with it on, anyone who finds the URL can
-truncate the database.
+**Then deploy.** Set every variable from §1 in the Vercel project. Set `RECOVERAI_DEMO_MODE=true`
+only if the deployment is meant to be an interactive demo: it opens `/api/simulator/*` so a
+visitor can inject a signed webhook, pay, reply and move the clock. Reseeding stays behind a
+dashboard session either way, so the batch cannot be reset by a passer-by.
 
 Local development is unchanged: no `DATABASE_URL` at all still means `file:./data/recoverai.db`,
 created and migrated on first connection with no separate step.

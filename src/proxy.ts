@@ -126,7 +126,22 @@ export function proxy(req?: NextRequest): NextResponse {
   }
 
   if (pathname.startsWith('/api/simulator/')) {
-    return simulatorSurfaceBlocked() ? notFoundJson() : NextResponse.next();
+    if (simulatorSurfaceBlocked()) return notFoundJson();
+
+    // Within the demo surface, one route is not like the others: /api/simulator/seed truncates
+    // every table. Anyone may drive the demo — inject a webhook, pay, reply, move the clock —
+    // but only the operator may reset it, so a visitor cannot wipe the batch mid-judging.
+    //
+    // Gated on a session only once one is configured at all: on a developer's machine with no
+    // SESSION_SECRET there is nothing to protect and the zero-config seed button must keep
+    // working exactly as it does today.
+    if (pathname.startsWith('/api/simulator/seed') && isSessionConfigured() && !hasValidSession(req)) {
+      return unauthorizedJson(
+        'Reseeding the batch requires a dashboard session. The rest of the simulator is open.'
+      );
+    }
+
+    return NextResponse.next();
   }
 
   // /api/recovery/*: the dashboard's own "Run Recovery" button calls these directly, so a valid

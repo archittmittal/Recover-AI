@@ -10,8 +10,7 @@ import fs from 'fs';
  * the first corrected draft of that summary was itself wrong by one row.
  */
 
-const STATUSES = ['✅', '🟡', '⬜', '❌'] as const;
-type Status = (typeof STATUSES)[number];
+type Status = '✅' | '🟡' | '⬜' | '❌';
 
 interface PhaseCount {
   phase: string;

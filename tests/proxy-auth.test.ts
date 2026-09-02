@@ -88,6 +88,52 @@ describe('proxy — /api/simulator/* gated on demo mode, not session (RA-05)', (
     expect(res.status).not.toBe(401);
   });
 
+  /**
+   * The one destructive route on an otherwise open demo surface: /api/simulator/seed truncates
+   * every table. On a public demo a visitor may drive everything else, but resetting the batch
+   * out from under a judge is the operator's call alone.
+   */
+  it('requires a session to reseed once auth is configured, while the rest stays open', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('RECOVERAI_DEMO_MODE', 'true');
+    vi.stubEnv('SESSION_SECRET', 'a-real-session-secret-0123456789');
+
+    const seed = proxy(buildRequest('/api/simulator/seed', { ip: `10.0.7.${crypto.randomUUID().slice(0, 2)}` }));
+    expect(seed.status).toBe(401);
+
+    for (const open of ['/api/simulator/webhook', '/api/simulator/pay', '/api/simulator/clock']) {
+      const res = proxy(buildRequest(open, { ip: `10.0.8.${crypto.randomUUID().slice(0, 2)}` }));
+      expect(res.status, open).not.toBe(401);
+      expect(res.status, open).not.toBe(404);
+    }
+  });
+
+  it('lets a logged-in operator reseed', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('RECOVERAI_DEMO_MODE', 'true');
+    vi.stubEnv('SESSION_SECRET', 'a-real-session-secret-0123456789');
+
+    const token = createSessionToken('admin');
+    const req = new NextRequest(new URL('http://localhost/api/simulator/seed'), {
+      headers: new Headers({
+        'x-forwarded-for': `10.0.9.${crypto.randomUUID().slice(0, 2)}`,
+        cookie: `${SESSION_COOKIE_NAME}=${token}`,
+      }),
+    });
+
+    expect(proxy(req).status).not.toBe(401);
+  });
+
+  it('leaves the zero-config local seed button working with no auth set up', () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('SESSION_SECRET', '');
+
+    // Nothing to protect on a developer's machine, and `npm run dev` must not require a login
+    // before the very first seed.
+    const res = proxy(buildRequest('/api/simulator/seed', { ip: `10.0.10.${crypto.randomUUID().slice(0, 2)}` }));
+    expect(res.status).not.toBe(401);
+  });
+
   it('passes through outside production without an opt-in', () => {
     vi.stubEnv('NODE_ENV', 'development');
     vi.stubEnv('RECOVERAI_DEMO_MODE', '');
