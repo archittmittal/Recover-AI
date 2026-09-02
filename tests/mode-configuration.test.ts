@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { getMode, isLive, readCredential, requireCredential, getGeminiModel, describeIntegrations } from '../src/lib/config';
 
 /**
@@ -66,5 +66,35 @@ describe('preflight', () => {
     expect(line).toContain('mode=mock');
     expect(line).toContain('gemini=unset');
     expect(line).toContain('model=gemini-3.6-flash');
+  });
+});
+
+describe('credentials are never read at module scope', () => {
+  /**
+   * `next build` evaluates every route module to collect page data. Reading a credential in a
+   * client constructor therefore made the *build* depend on runtime secrets: with
+   * RECOVERAI_MODE=live and no key in the build environment, the deployment failed with
+   * "Failed to collect configuration for /api/recovery/sweep" — nowhere near the real cause.
+   *
+   * Importing the modules must stay harmless. The loud failure belongs at first use.
+   */
+  it('importing the clients in live mode with no credentials does not throw', async () => {
+    vi.stubEnv('RECOVERAI_MODE', 'live');
+    vi.stubEnv('GEMINI_API_KEY', 'XXXXXXXXXXXXXXXXXXXX');
+    vi.stubEnv('RAZORPAY_KEY_ID', 'XXXXXXXXXXXXXXXXXXXX');
+    vi.stubEnv('RAZORPAY_KEY_SECRET', 'XXXXXXXXXXXXXXXXXXXX');
+    vi.resetModules();
+
+    await expect(import('../src/lib/ai/gemini')).resolves.toBeDefined();
+    await expect(import('../src/lib/razorpay/client')).resolves.toBeDefined();
+  });
+
+  it('still fails loudly at first use', async () => {
+    vi.stubEnv('RECOVERAI_MODE', 'live');
+    vi.stubEnv('GEMINI_API_KEY', 'XXXXXXXXXXXXXXXXXXXX');
+    vi.resetModules();
+
+    const { gemini } = await import('../src/lib/ai/gemini');
+    expect(() => gemini.isAvailable()).toThrow(/GEMINI_API_KEY is missing or still a placeholder/);
   });
 });
