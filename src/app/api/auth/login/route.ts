@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { timingSafeStringEqual } from '@/lib/auth/crypto';
-import { createSessionToken, SESSION_COOKIE_NAME, SESSION_MAX_AGE_SECONDS } from '@/lib/auth/session';
+import {
+  createSessionToken,
+  isSessionConfigured,
+  SESSION_COOKIE_NAME,
+  SESSION_MAX_AGE_SECONDS,
+} from '@/lib/auth/session';
+import { isTemplatePlaceholder } from '@/lib/config';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,9 +19,24 @@ export async function POST(req: NextRequest) {
     const configuredUsername = process.env.DASHBOARD_USERNAME || '';
     const configuredPassword = process.env.DASHBOARD_PASSWORD || '';
 
-    if (!configuredUsername || !configuredPassword || !process.env.SESSION_SECRET) {
+    // A `.env` copied from `.env.example` leaves all three as their template values. Answering
+    // 401 there is misleading — nothing the operator types can succeed — and issuing a session
+    // signed with the repository's own placeholder secret would be worse than refusing.
+    if (
+      isTemplatePlaceholder(configuredUsername) ||
+      isTemplatePlaceholder(configuredPassword) ||
+      !isSessionConfigured()
+    ) {
       return NextResponse.json(
-        { success: false, error: { code: 'NOT_CONFIGURED', message: 'Dashboard login is not configured' } },
+        {
+          success: false,
+          error: {
+            code: 'NOT_CONFIGURED',
+            message:
+              'Dashboard login is not configured. Set SESSION_SECRET, DASHBOARD_USERNAME and ' +
+              'DASHBOARD_PASSWORD to real values (see .env.example).',
+          },
+        },
         { status: 503 }
       );
     }

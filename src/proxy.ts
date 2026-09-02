@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { checkRateLimit } from '@/lib/utils/rate-limit';
 import { timingSafeStringEqual } from '@/lib/auth/crypto';
 import { isSessionConfigured, verifySessionToken, SESSION_COOKIE_NAME } from '@/lib/auth/session';
+import { isTemplatePlaceholder } from '@/lib/config';
 
 /**
  * One gate in front of every route (RA-05).
@@ -63,7 +64,11 @@ function simulatorSurfaceBlocked(): boolean {
 
 function hasValidCronSecret(req: NextRequest): { configured: boolean; valid: boolean } {
   const configuredSecret = process.env.RECOVERY_SWEEP_SECRET || process.env.CRON_SECRET || '';
-  if (!configuredSecret) {
+
+  // A template placeholder is not a configured secret. Treating it as one made this route
+  // answer 401 ("your secret is wrong") where the honest answer is 503 ("this endpoint has no
+  // secret set up"), and would have accepted a value published in this repository.
+  if (isTemplatePlaceholder(configuredSecret)) {
     return { configured: false, valid: false };
   }
 
