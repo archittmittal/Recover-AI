@@ -58,7 +58,14 @@ export function readCredential(name: string): string | undefined {
 
 export function requireCredential(name: string): string | undefined {
   const value = process.env[name];
-  if (!isLive()) return isPlaceholder(value) ? undefined : value;
+
+  // Mock mode hands out no credentials, even real ones. `.env.example` promises "mock (default)
+  // — no outbound calls; payment links and LLM copy are simulated", and that was false: a
+  // configured GEMINI_API_KEY was returned here, so the Gemini client initialised and every
+  // journey made a live LLM call. A mock-mode batch run took two minutes of real API traffic,
+  // and the deployed webhook handler spent seconds per delivery on a call the mode says it does
+  // not make. Set RECOVERAI_MODE=live to actually use the models.
+  if (!isLive()) return undefined;
 
   if (isPlaceholder(value)) {
     throw new Error(

@@ -1,16 +1,107 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readCredential } from '@/lib/config';
 import { db } from '@/lib/db';
-import { webhookEvents, paymentFailures, customers } from '@/lib/db/schema';
+import { webhookEvents, paymentFailures, customers, recoveryJourneys } from '@/lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { verifyWebhookSignature, computePayloadHash } from '@/lib/razorpay/webhooks';
 import { RazorpayWebhookPayload } from '@/lib/razorpay/types';
 import { recoveryCoordinator } from '@/lib/recovery/coordinator';
 import { generateId } from '@/lib/utils/ids';
 import { formatIST, getClock } from '@/lib/utils/time';
+import { writeAuditLog } from '@/lib/utils/audit';
 import { normalizePhoneE164 } from '@/lib/utils/phone';
 
 export const dynamic = 'force-dynamic';
+
+
+/**
+ * Makes a request-derived value safe to log (CodeQL js/log-injection).
+ *
+ * `payload.event` comes from the request body. Signature verification runs first, so only a
+ * holder of the webhook secret can reach these lines — but a newline in a logged value forges
+ * log entries wherever those logs are shipped, and "an attacker would need the secret" is a
+ * reason to rank the risk low, not to interpolate raw request data into a log at all.
+ */
+function forLog(value: unknown): string {
+  return String(value ?? '')
+    .replace(/[^\w.:@ -]/g, '')
+    .slice(0, 64);
+}
+
+/** `recov_<journeyId>_att<n>` — the reference the coordinator stamps on every link it creates. */
+function journeyIdFromReference(reference: string | undefined | null): string | null {
+  if (!reference) return null;
+  const match = reference.match(/^recov_(.+)_att\d+$/);
+  return match ? match[1] : null;
+}
+
+/**
+ * Closes the journey a recovered payment belongs to.
+ *
+ * Attribution is deliberate rather than best-effort: a journey is matched by the payment link id
+ * we stored when we created it, or by the `recov_<journeyId>_att<n>` reference we stamped on it.
+ * Both are our own identifiers, so a match is a fact. A payment that carries neither is recorded
+ * and left alone — guessing which open journey it belonged to would fabricate the one number the
+ * whole project is judged on.
+ */
+async function resolveFromPaymentEvent(
+  payload: RazorpayWebhookPayload
+): Promise<{ resolvedJourneyId: string | null; reason?: string }> {
+  const link = payload.payload.payment_link?.entity;
+  const payment = payload.payload.payment?.entity;
+
+  const linkId = link?.id ?? null;
+  const journeyIdFromRef = journeyIdFromReference(link?.reference_id);
+
+  let journey = null;
+
+  if (journeyIdFromRef) {
+    [journey] = await db
+      .select()
+      .from(recoveryJourneys)
+      .where(eq(recoveryJourneys.id, journeyIdFromRef))
+      .limit(1);
+  }
+
+  if (!journey && linkId) {
+    [journey] = await db
+      .select()
+      .from(recoveryJourneys)
+      .where(eq(recoveryJourneys.paymentLinkId, linkId))
+      .limit(1);
+  }
+
+  if (!journey) {
+    console.warn(
+      `[webhook:razorpay] ${forLog(payload.event)} carried no link id or recovery reference; ` +
+        'recording it without attributing a recovery.'
+    );
+    return { resolvedJourneyId: null, reason: 'no_matching_journey' };
+  }
+
+  // The amount actually paid, falling back to what the journey put at risk.
+  const amountPaid = payment?.amount ?? journey.amountAtRisk;
+  const paymentId = payment?.id ?? `${payload.event}_${linkId ?? journey.id}`;
+
+  // resolveJourneyWithPayment is idempotent (RA-09), so a Razorpay retry of the same delivery
+  // cannot double-count the recovery even if the idempotency claim above were bypassed.
+  await recoveryCoordinator.resolveJourneyWithPayment(journey.id, paymentId, amountPaid);
+
+  await writeAuditLog({
+    journeyId: journey.id,
+    actor: 'razorpay',
+    eventType: 'payment_recovered_via_webhook',
+    eventData: {
+      event: payload.event,
+      paymentLinkId: linkId,
+      referenceId: link?.reference_id ?? null,
+      amountPaid,
+      attribution: journeyIdFromRef ? 'recovery_reference' : 'payment_link_id',
+    },
+  });
+
+  return { resolvedJourneyId: journey.id };
+}
 
 export async function POST(req: NextRequest) {
   let eventId: string | undefined;
@@ -112,6 +203,29 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Process Event Types
+    //
+    // A recovered payment closes the journey it belongs to. Before this, `payment_link.paid` and
+    // `payment.captured` were verified, recorded, marked processed and then dropped — so a
+    // customer who actually paid through a recovery link never resolved anything, and the
+    // dashboard's recovered figure could only move via the simulator's Pay button. The
+    // deployment guide meanwhile told operators to subscribe to both.
+    if (payload.event === 'payment_link.paid' || payload.event === 'payment.captured') {
+      const resolution = await resolveFromPaymentEvent(payload);
+
+      await db
+        .update(webhookEvents)
+        .set({
+          processingStatus: 'processed',
+          processedAt: formatIST(getClock().now()),
+        })
+        .where(eq(webhookEvents.id, eventId));
+
+      return NextResponse.json({
+        success: true,
+        data: { eventId, status: 'processed', ...resolution },
+      });
+    }
+
     if (payload.event === 'payment.failed' && payload.payload.payment) {
       const payment = payload.payload.payment.entity;
 

@@ -91,14 +91,19 @@ To receive live transaction events and trigger autonomous recovery:
    https://recoverai.yourdomain.com/api/webhooks/razorpay
    ```
 4. Enter a strong secret and save it to your `RAZORPAY_WEBHOOK_SECRET` environment variable.
-5. Subscribe to **`payment.failed`** only.
+5. Subscribe to these three:
+   - **`payment.failed`** — detects the failure and starts a recovery journey.
+   - **`payment_link.paid`** — resolves the journey when the customer pays through a recovery
+     link. This is how a real recovery reaches the dashboard.
+   - **`payment.captured`** — resolves the same way when the capture event carries the link.
 
-   That is the sole event the handler acts on — `payload.event` is tested once, at
-   `src/app/api/webhooks/razorpay/route.ts:115`. Any other subscribed event is verified,
-   recorded in `webhook_events`, marked `processed`, and has **no effect on any journey**:
-   Razorpay's delivery log shows green while nothing happens. In particular `payment_link.paid`
-   does *not* resolve a recovery journey today, so a customer paying through a recovery link is
-   not reflected on the dashboard by this route.
+   Attribution is deliberate: a journey is matched only by the payment link id this system
+   stored or the `recov_<journeyId>_att<n>` reference it stamped on the link. A payment carrying
+   neither is recorded and left alone rather than attributed to a guess.
+
+   `subscription.pending`, `subscription.halted` and the other subscription events are **not
+   handled**. Subscribing to them is harmless — they are verified, recorded and ignored — but
+   they will not start or resolve anything, so leave them off.
 6. Trigger a delivery from the dashboard to confirm the wiring end to end.
 
 ---
