@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { after } from 'next/server';
 import { readCredential } from '@/lib/config';
 import { db } from '@/lib/db';
 import { webhookEvents, paymentFailures, customers, recoveryJourneys } from '@/lib/db/schema';
@@ -103,105 +104,28 @@ async function resolveFromPaymentEvent(
   return { resolvedJourneyId: journey.id };
 }
 
-export async function POST(req: NextRequest) {
-  let eventId: string | undefined;
 
+/**
+ * Everything the agent does with a verified, claimed event.
+ *
+ * Split out of the request path so the acknowledgement does not wait on it. Creating a journey
+ * means a real Razorpay payment link and a real Gemini call, which took ~18 seconds on the
+ * deployment — far beyond Razorpay's webhook timeout, so every genuine delivery was marked
+ * failed and retried even though it had been processed correctly. Retries were harmless thanks
+ * to the idempotency claim, but their dashboard showed red for work that succeeded.
+ *
+ * The trade-off is deliberate: a 2xx now means "verified and accepted", not "fully processed".
+ * The truth lives in `webhook_events.processing_status` and the audit trail, which is where an
+ * operator should look anyway — a webhook sender is not a progress bar.
+ */
+type ProcessingSummary = { resolvedJourneyId?: string | null; reason?: string };
+
+async function processClaimedEvent(
+  payload: RazorpayWebhookPayload,
+  eventId: string
+): Promise<ProcessingSummary> {
   try {
-    const rawBody = await req.text();
-    const signature = req.headers.get('x-razorpay-signature') || '';
-    const secret = readCredential('RAZORPAY_WEBHOOK_SECRET');
-
-    // Signature verification is mandatory. A missing or placeholder secret is a
-    // deployment misconfiguration, not permission to skip verification (RA-01).
-    if (!secret) {
-      console.error('[webhook:razorpay] RAZORPAY_WEBHOOK_SECRET not configured — rejecting request');
-      return NextResponse.json(
-        { success: false, error: { code: 'NOT_CONFIGURED', message: 'Webhook secret not configured' } },
-        { status: 503 }
-      );
-    }
-
-    const isValid = verifyWebhookSignature(rawBody, signature, secret);
-    if (!isValid) {
-      return NextResponse.json(
-        { success: false, error: { code: 'INVALID_SIGNATURE', message: 'Invalid webhook signature' } },
-        { status: 400 }
-      );
-    }
-
-    // Razorpay identifies each webhook delivery via the x-razorpay-event-id header,
-    // not a field in the JSON body (the body carries no top-level `id` at all — see
-    // RazorpayWebhookPayload). Relying on a body field that is never sent meant
-    // deduplication silently never matched (RA-04).
-    eventId = req.headers.get('x-razorpay-event-id') || undefined;
-    if (!eventId) {
-      return NextResponse.json(
-        { success: false, error: { code: 'MISSING_EVENT_ID', message: 'Missing x-razorpay-event-id header' } },
-        { status: 400 }
-      );
-    }
-
-    const payload = JSON.parse(rawBody) as RazorpayWebhookPayload;
-    const payloadHash = computePayloadHash(rawBody);
     const nowStr = formatIST(getClock().now());
-
-    // 1. Idempotency Claim: atomic insert-or-conflict on the primary key, so
-    // two concurrent deliveries of the same event can never both proceed
-    // (the previous select-then-insert was a TOCTOU race).
-    const claimed = await db
-      .insert(webhookEvents)
-      .values({
-        id: eventId,
-        eventType: payload.event,
-        payloadHash,
-        processingStatus: 'processing',
-        receivedAt: nowStr,
-      })
-      .onConflictDoNothing()
-      .returning();
-
-    if (claimed.length === 0) {
-      const [prior] = await db
-        .select()
-        .from(webhookEvents)
-        .where(eq(webhookEvents.id, eventId))
-        .limit(1);
-
-      if (prior?.processingStatus === 'processed') {
-        // Only a genuinely completed event is a true duplicate.
-        return NextResponse.json({
-          success: true,
-          data: { message: 'Duplicate webhook event ignored (idempotent)', eventId },
-        });
-      }
-
-      if (prior?.processingStatus === 'failed') {
-        // A prior attempt errored out. Reclaim atomically (compare-and-swap
-        // on status) and reprocess this delivery instead of swallowing it.
-        const reclaimed = await db
-          .update(webhookEvents)
-          .set({ processingStatus: 'processing', errorMessage: null })
-          .where(and(eq(webhookEvents.id, eventId), eq(webhookEvents.processingStatus, 'failed')))
-          .returning();
-
-        if (reclaimed.length === 0) {
-          // Lost the reclaim race to another concurrent retry delivery.
-          return NextResponse.json(
-            { success: false, error: { code: 'RETRY', message: 'Event reprocessing already in progress' } },
-            { status: 503 }
-          );
-        }
-        // Falls through to process the event below.
-      } else {
-        // Still 'processing' — another delivery is actively working on it.
-        // Ask Razorpay to retry later rather than reporting false success.
-        return NextResponse.json(
-          { success: false, error: { code: 'RETRY', message: 'Event is currently being processed' } },
-          { status: 503 }
-        );
-      }
-    }
-
     // 2. Process Event Types
     //
     // A recovered payment closes the journey it belongs to. Before this, `payment_link.paid` and
@@ -209,22 +133,11 @@ export async function POST(req: NextRequest) {
     // customer who actually paid through a recovery link never resolved anything, and the
     // dashboard's recovered figure could only move via the simulator's Pay button. The
     // deployment guide meanwhile told operators to subscribe to both.
+    let summary: ProcessingSummary = {};
+
     if (payload.event === 'payment_link.paid' || payload.event === 'payment.captured') {
-      const resolution = await resolveFromPaymentEvent(payload);
-
-      await db
-        .update(webhookEvents)
-        .set({
-          processingStatus: 'processed',
-          processedAt: formatIST(getClock().now()),
-        })
-        .where(eq(webhookEvents.id, eventId));
-
-      return NextResponse.json({
-        success: true,
-        data: { eventId, status: 'processed', ...resolution },
-      });
-    }
+      summary = await resolveFromPaymentEvent(payload);
+    } else
 
     if (payload.event === 'payment.failed' && payload.payload.payment) {
       const payment = payload.payload.payment.entity;
@@ -336,7 +249,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Mark webhook as processed
     await db
       .update(webhookEvents)
       .set({
@@ -345,9 +257,168 @@ export async function POST(req: NextRequest) {
       })
       .where(eq(webhookEvents.id, eventId));
 
+    return summary;
+  } catch (error: unknown) {
+    const errorMsg = error instanceof Error ? error.message : 'Unknown webhook error';
+    console.error('[webhook:razorpay] deferred processing failed', error);
+    try {
+      await db
+        .update(webhookEvents)
+        .set({
+          processingStatus: 'failed',
+          errorMessage: errorMsg,
+          processedAt: formatIST(getClock().now()),
+        })
+        .where(eq(webhookEvents.id, eventId));
+    } catch (updateError) {
+      console.error('[webhook:razorpay] failed to mark event as failed', updateError);
+    }
+
+    // Rethrown so a caller that has NOT yet answered can still answer 500 and let Razorpay
+    // retry — the reclaim path RA-10 exists for. Once the response has gone out (the deferred
+    // case) nothing can be signalled, and the failure lives in webhook_events.processing_status
+    // with its error message for an operator, or a future reconciliation pass, to act on.
+    throw error;
+  }
+}
+
+/**
+ * Runs the processing after the response where the runtime supports it, and inline where it does
+ * not. `after()` throws outside a request scope — a test calling the handler directly, or the
+ * simulator invoking it in-process — and silently dropping the work there would be worse than
+ * being slow.
+ */
+function tryDeferProcessing(payload: RazorpayWebhookPayload, eventId: string): boolean {
+  try {
+    after(() => processClaimedEvent(payload, eventId));
+    return true;
+  } catch {
+    // No request scope — a test calling the handler directly, or the simulator invoking it
+    // in-process. The caller runs it inline instead; dropping the work would be worse than
+    // being slow.
+    return false;
+  }
+}
+
+export async function POST(req: NextRequest) {
+  let eventId: string | undefined;
+
+  try {
+    const rawBody = await req.text();
+    const signature = req.headers.get('x-razorpay-signature') || '';
+    const secret = readCredential('RAZORPAY_WEBHOOK_SECRET');
+
+    // Signature verification is mandatory. A missing or placeholder secret is a
+    // deployment misconfiguration, not permission to skip verification (RA-01).
+    if (!secret) {
+      console.error('[webhook:razorpay] RAZORPAY_WEBHOOK_SECRET not configured — rejecting request');
+      return NextResponse.json(
+        { success: false, error: { code: 'NOT_CONFIGURED', message: 'Webhook secret not configured' } },
+        { status: 503 }
+      );
+    }
+
+    const isValid = verifyWebhookSignature(rawBody, signature, secret);
+    if (!isValid) {
+      return NextResponse.json(
+        { success: false, error: { code: 'INVALID_SIGNATURE', message: 'Invalid webhook signature' } },
+        { status: 400 }
+      );
+    }
+
+    // Razorpay identifies each webhook delivery via the x-razorpay-event-id header,
+    // not a field in the JSON body (the body carries no top-level `id` at all — see
+    // RazorpayWebhookPayload). Relying on a body field that is never sent meant
+    // deduplication silently never matched (RA-04).
+    eventId = req.headers.get('x-razorpay-event-id') || undefined;
+    if (!eventId) {
+      return NextResponse.json(
+        { success: false, error: { code: 'MISSING_EVENT_ID', message: 'Missing x-razorpay-event-id header' } },
+        { status: 400 }
+      );
+    }
+
+    const payload = JSON.parse(rawBody) as RazorpayWebhookPayload;
+    const payloadHash = computePayloadHash(rawBody);
+    const nowStr = formatIST(getClock().now());
+
+    // 1. Idempotency Claim: atomic insert-or-conflict on the primary key, so
+    // two concurrent deliveries of the same event can never both proceed
+    // (the previous select-then-insert was a TOCTOU race).
+    const claimed = await db
+      .insert(webhookEvents)
+      .values({
+        id: eventId,
+        eventType: payload.event,
+        payloadHash,
+        processingStatus: 'processing',
+        receivedAt: nowStr,
+      })
+      .onConflictDoNothing()
+      .returning();
+
+    if (claimed.length === 0) {
+      const [prior] = await db
+        .select()
+        .from(webhookEvents)
+        .where(eq(webhookEvents.id, eventId))
+        .limit(1);
+
+      if (prior?.processingStatus === 'processed') {
+        // Only a genuinely completed event is a true duplicate.
+        return NextResponse.json({
+          success: true,
+          data: { message: 'Duplicate webhook event ignored (idempotent)', eventId },
+        });
+      }
+
+      if (prior?.processingStatus === 'failed') {
+        // A prior attempt errored out. Reclaim atomically (compare-and-swap
+        // on status) and reprocess this delivery instead of swallowing it.
+        const reclaimed = await db
+          .update(webhookEvents)
+          .set({ processingStatus: 'processing', errorMessage: null })
+          .where(and(eq(webhookEvents.id, eventId), eq(webhookEvents.processingStatus, 'failed')))
+          .returning();
+
+        if (reclaimed.length === 0) {
+          // Lost the reclaim race to another concurrent retry delivery.
+          return NextResponse.json(
+            { success: false, error: { code: 'RETRY', message: 'Event reprocessing already in progress' } },
+            { status: 503 }
+          );
+        }
+        // Falls through to process the event below.
+      } else {
+        // Still 'processing' — another delivery is actively working on it.
+        // Ask Razorpay to retry later rather than reporting false success.
+        return NextResponse.json(
+          { success: false, error: { code: 'RETRY', message: 'Event is currently being processed' } },
+          { status: 503 }
+        );
+      }
+    }
+
+    // Acknowledge now; do the agent's work after the response.
+    //
+    // Razorpay's timeout is far shorter than a journey takes to start (a real payment link plus
+    // a Gemini call ran ~18s on the deployment), so every genuine delivery was being marked
+    // failed and retried for work that had actually succeeded. `after()` is Next's supported way
+    // to keep a serverless invocation alive past the response — on Vercel it is backed by
+    // waitUntil — so the processing still completes, it just stops holding the sender open.
+    if (tryDeferProcessing(payload, eventId)) {
+      return NextResponse.json({
+        success: true,
+        data: { eventId, status: 'accepted' },
+      });
+    }
+
+    // Inline: the response has not gone out yet, so a failure can still surface as a 500 and be
+    // retried by the sender. The outer catch below turns a rethrow into exactly that.
+    const summary = await processClaimedEvent(payload, eventId);
     return NextResponse.json({
       success: true,
-      data: { eventId, status: 'processed' },
+      data: { eventId, status: 'processed', ...summary },
     });
   } catch (error: unknown) {
     const errorMsg = error instanceof Error ? error.message : 'Unknown webhook error';
