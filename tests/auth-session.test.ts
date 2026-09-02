@@ -28,22 +28,22 @@ describe('session token creation and verification', () => {
   });
 
   it('creates and verifies a valid token', () => {
-    vi.stubEnv('SESSION_SECRET', 'test-secret-a');
+    vi.stubEnv('SESSION_SECRET', 'test-secret-a-0123456789');
     const token = createSessionToken('admin');
     expect(token).toBeTruthy();
     expect(verifySessionToken(token)).toBe(true);
   });
 
   it('rejects a token signed with a different secret', () => {
-    vi.stubEnv('SESSION_SECRET', 'test-secret-a');
+    vi.stubEnv('SESSION_SECRET', 'test-secret-a-0123456789');
     const token = createSessionToken('admin');
 
-    vi.stubEnv('SESSION_SECRET', 'test-secret-b');
+    vi.stubEnv('SESSION_SECRET', 'test-secret-b-0123456789');
     expect(verifySessionToken(token)).toBe(false);
   });
 
   it('rejects a tampered payload', () => {
-    vi.stubEnv('SESSION_SECRET', 'test-secret-a');
+    vi.stubEnv('SESSION_SECRET', 'test-secret-a-0123456789');
     const token = createSessionToken('admin')!;
     const [payload, signature] = token.split('.');
     const tamperedPayload = Buffer.from(JSON.stringify({ u: 'attacker', exp: Date.now() + 999999 }), 'utf-8').toString(
@@ -54,7 +54,7 @@ describe('session token creation and verification', () => {
   });
 
   it('rejects an expired token', () => {
-    vi.stubEnv('SESSION_SECRET', 'test-secret-a');
+    vi.stubEnv('SESSION_SECRET', 'test-secret-a-0123456789');
     const now = Date.now();
     vi.spyOn(Date, 'now').mockReturnValue(now - 13 * 60 * 60 * 1000); // 13h ago, TTL is 12h
     const token = createSessionToken('admin');
@@ -65,7 +65,7 @@ describe('session token creation and verification', () => {
   });
 
   it('rejects malformed tokens', () => {
-    vi.stubEnv('SESSION_SECRET', 'test-secret-a');
+    vi.stubEnv('SESSION_SECRET', 'test-secret-a-0123456789');
     expect(verifySessionToken('not-a-real-token')).toBe(false);
     expect(verifySessionToken(null)).toBe(false);
     expect(verifySessionToken(undefined)).toBe(false);

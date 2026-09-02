@@ -29,7 +29,7 @@ describe('POST /api/auth/login (RA-05)', () => {
   it('rejects wrong credentials with 401 and sets no cookie', async () => {
     vi.stubEnv('DASHBOARD_USERNAME', 'admin');
     vi.stubEnv('DASHBOARD_PASSWORD', 'correct-horse-battery-staple');
-    vi.stubEnv('SESSION_SECRET', 'test-secret');
+    vi.stubEnv('SESSION_SECRET', 'test-secret-0123456789abcdef');
 
     const res = await login(buildLoginRequest({ username: 'admin', password: 'wrong' }));
     expect(res.status).toBe(401);
@@ -39,7 +39,7 @@ describe('POST /api/auth/login (RA-05)', () => {
   it('accepts correct credentials and sets a valid, httpOnly session cookie', async () => {
     vi.stubEnv('DASHBOARD_USERNAME', 'admin');
     vi.stubEnv('DASHBOARD_PASSWORD', 'correct-horse-battery-staple');
-    vi.stubEnv('SESSION_SECRET', 'test-secret');
+    vi.stubEnv('SESSION_SECRET', 'test-secret-0123456789abcdef');
 
     const res = await login(buildLoginRequest({ username: 'admin', password: 'correct-horse-battery-staple' }));
     expect(res.status).toBe(200);
@@ -56,7 +56,7 @@ describe('POST /api/auth/login (RA-05)', () => {
   it('rejects a non-string username/password payload without throwing', async () => {
     vi.stubEnv('DASHBOARD_USERNAME', 'admin');
     vi.stubEnv('DASHBOARD_PASSWORD', 'correct-horse-battery-staple');
-    vi.stubEnv('SESSION_SECRET', 'test-secret');
+    vi.stubEnv('SESSION_SECRET', 'test-secret-0123456789abcdef');
 
     const res = await login(buildLoginRequest({ username: 12345, password: null }));
     expect(res.status).toBe(401);

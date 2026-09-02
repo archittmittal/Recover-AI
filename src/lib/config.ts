@@ -13,9 +13,20 @@
 
 export type RecoverAiMode = 'mock' | 'live';
 
-/** Credentials still holding their .env.example placeholder value. */
+/**
+ * A value still holding its `.env.example` template form.
+ *
+ * Exported because the auth layer needs exactly this test and nothing more: a session secret
+ * containing the substring "mock" is a perfectly good secret, while one containing the
+ * `XXXXXXXX` marker is the literal text shipped in the public repository.
+ */
+export function isTemplatePlaceholder(value: string | undefined): boolean {
+  return !value || value.includes('XXXXXXXX');
+}
+
+/** Credentials still holding their .env.example placeholder value, or explicitly mocked. */
 function isPlaceholder(value: string | undefined): boolean {
-  return !value || value.includes('XXXXXXXX') || value.includes('mock');
+  return isTemplatePlaceholder(value) || value!.includes('mock');
 }
 
 export function getMode(): RecoverAiMode {
