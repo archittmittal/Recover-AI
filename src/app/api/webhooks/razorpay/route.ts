@@ -14,6 +14,20 @@ import { normalizePhoneE164 } from '@/lib/utils/phone';
 export const dynamic = 'force-dynamic';
 
 
+/**
+ * Makes a request-derived value safe to log (CodeQL js/log-injection).
+ *
+ * `payload.event` comes from the request body. Signature verification runs first, so only a
+ * holder of the webhook secret can reach these lines — but a newline in a logged value forges
+ * log entries wherever those logs are shipped, and "an attacker would need the secret" is a
+ * reason to rank the risk low, not to interpolate raw request data into a log at all.
+ */
+function forLog(value: unknown): string {
+  return String(value ?? '')
+    .replace(/[^\w.:@ -]/g, '')
+    .slice(0, 64);
+}
+
 /** `recov_<journeyId>_att<n>` — the reference the coordinator stamps on every link it creates. */
 function journeyIdFromReference(reference: string | undefined | null): string | null {
   if (!reference) return null;
@@ -59,7 +73,7 @@ async function resolveFromPaymentEvent(
 
   if (!journey) {
     console.warn(
-      `[webhook:razorpay] ${payload.event} carried no link id or recovery reference; ` +
+      `[webhook:razorpay] ${forLog(payload.event)} carried no link id or recovery reference; ` +
         'recording it without attributing a recovery.'
     );
     return { resolvedJourneyId: null, reason: 'no_matching_journey' };

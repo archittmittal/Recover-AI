@@ -247,3 +247,39 @@ describe('payment.captured', () => {
     expect((await res.json()).data.resolvedJourneyId).toBe(journeyId);
   });
 });
+
+describe('log injection (CodeQL js/log-injection)', () => {
+  it('does not let a crafted event name forge log lines', async () => {
+    const journeyId = await seedJourney(null);
+    const warnings: string[] = [];
+    const original = console.warn;
+    console.warn = (...args: unknown[]) => warnings.push(args.map(String).join(' '));
+
+    try {
+      await deliver({
+        entity: 'event',
+        account_id: 'acc_test',
+        // A newline here would otherwise append a second, fabricated line to the log stream.
+        event: 'payment_link.paid\n[webhook:razorpay] FORGED payment recovered ₹99999',
+        contains: ['payment_link'],
+        payload: {
+          payment_link: {
+            entity: { id: 'plink_nobody', amount: 100, currency: 'INR', status: 'paid', short_url: 'x' },
+          },
+        },
+        created_at: 1788000000,
+      });
+    } finally {
+      console.warn = original;
+    }
+
+    expect(warnings.join('\n')).not.toContain('FORGED');
+    expect(warnings.join('\n')).not.toMatch(/\n\[webhook:razorpay\] FORGED/);
+
+    const [journey] = await db
+      .select()
+      .from(recoveryJourneys)
+      .where(eq(recoveryJourneys.id, journeyId));
+    expect(journey.status).toBe('recovering');
+  });
+});
