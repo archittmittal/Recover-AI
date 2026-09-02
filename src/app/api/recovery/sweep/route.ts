@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { runCheckoutAbandonmentSweep } from '@/lib/recovery/abandonment-sweep';
+import { findUnprocessedWebhookEvents } from '@/lib/recovery/webhook-reconciliation';
 import { recoveryCoordinator } from '@/lib/recovery/coordinator';
 import { getSimulationSeed, isLive } from '@/lib/config';
 import { runSimulatedOutcomes } from '@/lib/simulation/outcomes';
@@ -30,12 +31,22 @@ export async function POST() {
       );
     }
 
+    // Webhook deliveries whose processing never finished. Since #188 acknowledges before doing
+    // the agent's work, a failure after the response cannot be signalled to Razorpay, so their
+    // retry can never reclaim it — this sweep is the only thing that surfaces those rows.
+    const unprocessedWebhooks = await findUnprocessedWebhookEvents();
+
     return NextResponse.json({
       success: true,
       data: {
         ...result,
         simulatedRecoveries: simulatedRecoveries.length,
         simulationSeed: isLive() ? null : simulationSeed,
+        unprocessedWebhooks: {
+          failed: unprocessedWebhooks.failed.length,
+          stuck: unprocessedWebhooks.stuck.length,
+          events: [...unprocessedWebhooks.failed, ...unprocessedWebhooks.stuck],
+        },
       },
     });
   } catch (error: unknown) {
