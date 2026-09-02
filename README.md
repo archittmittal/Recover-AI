@@ -174,7 +174,10 @@ numbers, and `/api/recovery/trigger` makes the system contact people, so neither
 Set `SESSION_SECRET`, `DASHBOARD_USERNAME` and `DASHBOARD_PASSWORD` in `.env` before first run;
 `.env.example` documents all three.
 
-No Docker, no external database — SQLite is a single committed file. Zero-config by design, so evaluating this takes minutes, not a setup session.
+No Docker, no external database. The SQLite file is created on first connection and migrated to
+the current schema automatically, so evaluating this takes minutes, not a setup session — there is
+no separate `db:migrate` step to remember. Nothing under `data/` is committed: the database is
+generated, and `.gitignore` keeps it that way.
 
 ### Demo flow
 
