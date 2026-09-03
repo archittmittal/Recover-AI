@@ -164,7 +164,11 @@ The seeded batch materialises the **same 50 failures into three cohorts** (RA-22
 | **C** | Classification, per-failure strategy, personalised copy, channel escalation. | What does the intelligence add? |
 
 Cloning the batch rather than partitioning it holds the failure mix, the amounts and the customer
-segments identical across arms by construction. Partitioning 50 failures three ways would have
+segments identical across arms by construction. Only the seeded cohorts enter the comparison: a
+failure arriving from a live webhook is stamped arm `C` so the agent handles it and the dashboard
+counts it, but it has no counterpart in arms A and B, and letting it in would destroy the very
+property this design exists for. Seeded rows carry a `simulation_key`; ingested ones do not, which
+is what the metrics query filters on. Partitioning 50 failures three ways would have
 left ~17 per arm and a mix that matched only approximately.
 
 **Common random numbers.** Every failure carries a `simulation_key` that is the same in all three
