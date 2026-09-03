@@ -128,6 +128,28 @@ export function shouldSimulateOutcomes(): boolean {
   return (process.env.SIMULATE_OUTCOMES || '').trim().toLowerCase() === 'true';
 }
 
+/**
+ * Whether Razorpay calls are simulated even in live mode.
+ *
+ * Razorpay's test mode caps payment links at **30 per account, in total** — not per minute:
+ *
+ *     429 {"code":"RATE_LIMIT_EXCEEDED",
+ *          "description":"test mode limit of 30 reached for payment_link"}
+ *
+ * A seeded batch dispatches a hundred or more, so a full live run against a test account is not
+ * merely slow, it is impossible. Before this flag the only way to stop calling Razorpay was
+ * `RECOVERAI_MODE=mock`, which also withholds the Gemini key — so an exhausted payment-link quota
+ * silently cost you the LLM as well, which is the one integration that still worked.
+ *
+ * Set `MOCK_PAYMENT_LINKS=true` to fabricate links while everything else stays live. The mode
+ * remains declared rather than inferred; this just makes the declaration finer-grained than one
+ * switch for two very different services.
+ */
+export function shouldMockPaymentLinks(): boolean {
+  if (!isLive()) return true;
+  return (process.env.MOCK_PAYMENT_LINKS || '').trim().toLowerCase() === 'true';
+}
+
 /** One line at startup naming what is actually wired, so a silent downgrade is visible. */
 export function describeIntegrations(): string {
   const mode = getMode();

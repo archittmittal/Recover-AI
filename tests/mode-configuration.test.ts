@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { getMode, isLive, readCredential, requireCredential, getGeminiModel, describeIntegrations, shouldSimulateOutcomes } from '../src/lib/config';
+import { getMode, isLive, readCredential, requireCredential, getGeminiModel, describeIntegrations, shouldSimulateOutcomes, shouldMockPaymentLinks } from '../src/lib/config';
 
 /**
  * RA-24 — mock vs live is declared, not inferred from the shape of a credential, and live
@@ -131,5 +131,39 @@ describe('SIMULATE_OUTCOMES', () => {
       vi.stubEnv('SIMULATE_OUTCOMES', value);
       expect(shouldSimulateOutcomes(), value).toBe(value.trim().toLowerCase() === 'true');
     }
+  });
+});
+
+describe('MOCK_PAYMENT_LINKS', () => {
+  /**
+   * Razorpay's test mode caps payment links at 30 per account in total — discovered the hard way,
+   * mid-batch:
+   *
+   *     429 RATE_LIMIT_EXCEEDED "test mode limit of 30 reached for payment_link"
+   *
+   * Before this flag, the only way to stop calling Razorpay was RECOVERAI_MODE=mock, which also
+   * withholds the Gemini key. An exhausted link quota therefore cost you the LLM too — the one
+   * integration that still worked.
+   */
+  it('mocks links in mock mode, where nothing is called anyway', () => {
+    vi.stubEnv('RECOVERAI_MODE', 'mock');
+    vi.stubEnv('MOCK_PAYMENT_LINKS', '');
+    expect(shouldMockPaymentLinks()).toBe(true);
+  });
+
+  it('uses the real API in live mode by default', () => {
+    vi.stubEnv('RECOVERAI_MODE', 'live');
+    vi.stubEnv('MOCK_PAYMENT_LINKS', '');
+    expect(shouldMockPaymentLinks()).toBe(false);
+  });
+
+  it('fabricates links in live mode when asked, leaving the LLM live', () => {
+    vi.stubEnv('RECOVERAI_MODE', 'live');
+    vi.stubEnv('MOCK_PAYMENT_LINKS', 'true');
+    vi.stubEnv('GEMINI_API_KEY', 'a-real-looking-key');
+
+    expect(shouldMockPaymentLinks()).toBe(true);
+    // The point of the split: Razorpay is off, Gemini is not.
+    expect(requireCredential('GEMINI_API_KEY')).toBe('a-real-looking-key');
   });
 });

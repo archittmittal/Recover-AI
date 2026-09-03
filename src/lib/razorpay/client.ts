@@ -5,7 +5,7 @@ import {
   RazorpaySubscriptionEntity,
 } from './types';
 import { nanoid } from 'nanoid';
-import { isLive, requireCredential } from '../config';
+import { requireCredential, shouldMockPaymentLinks } from '../config';
 
 export class RazorpayClient {
   private keyId = '';
@@ -43,7 +43,9 @@ export class RazorpayClient {
    */
   private isMockMode(): boolean {
     this.ensureInitialised();
-    return !isLive() || !this.keyId || !this.keySecret;
+    // MOCK_PAYMENT_LINKS lets a live deployment keep its real Gemini calls while fabricating
+    // links, which is the only workable configuration once a test account's 30-link cap is spent.
+    return shouldMockPaymentLinks() || !this.keyId || !this.keySecret;
   }
 
   /**
