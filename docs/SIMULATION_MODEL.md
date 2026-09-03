@@ -272,8 +272,17 @@ The agent cannot read the model it is scored against, so it cannot mark its own 
 directions are asserted in `tests/simulation-response-model.test.ts` and the first is also
 enforced in CI by the architectural boundary job in `.github/workflows/pr-governance.yml`.
 
-**In `RECOVERAI_MODE=live` no draw is ever taken.** Real customers and real Razorpay webhooks
-decide outcomes; inventing recoveries alongside them would corrupt a real merchant's numbers.
+**In `RECOVERAI_MODE=live` no draw is taken unless `SIMULATE_OUTCOMES=true`.** By default real
+customers and real Razorpay webhooks decide outcomes there; inventing recoveries alongside them
+would corrupt a real merchant's numbers.
+
+That flag exists for the one case the two modes could not serve together — a demo that wants real
+LLM copy and real payment links *and* a populated recovery rate, without waiting for 150 people to
+pay. It is a separate switch rather than a widening of "mock" precisely so the choice is visible
+in the environment rather than implied by the mode, and `GET /api/metrics` reports what is
+actually true under `provenance.outcomesAreSimulated`. The dashboard's "Simulated figures" notice
+therefore stays accurate on a live deployment running with the flag on, which is the entire reason
+that labelling machinery exists. A deployment carrying real merchant traffic leaves it unset.
 
 The manual **Pay** button in the simulator still works, so the live demo keeps its moment. It is
 now additive rather than the only source of outcomes.
