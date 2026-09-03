@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { paymentFailures, recoveryJourneys } from '@/lib/db/schema';
 import { recoveryCoordinator } from '@/lib/recovery/coordinator';
-import { getSimulationSeed, isLive } from '@/lib/config';
+import { getSimulationSeed, shouldSimulateOutcomes } from '@/lib/config';
 import { runSimulatedOutcomes } from '@/lib/simulation/outcomes';
 
 export const dynamic = 'force-dynamic';
@@ -38,7 +38,9 @@ export async function POST() {
     // In live mode nothing is drawn: real customers and real Razorpay webhooks decide, and
     // inventing recoveries alongside them would corrupt a real merchant's numbers.
     const simulationSeed = getSimulationSeed();
-    const simulatedRecoveries = isLive() ? [] : await runSimulatedOutcomes(simulationSeed);
+    const simulatedRecoveries = shouldSimulateOutcomes()
+      ? await runSimulatedOutcomes(simulationSeed)
+      : [];
 
     for (const recovery of simulatedRecoveries) {
       await recoveryCoordinator.resolveJourneyWithPayment(
@@ -57,12 +59,12 @@ export async function POST() {
         processedCount: processedJourneyIds.length,
         journeyIds: processedJourneyIds,
         simulatedRecoveries: simulatedRecoveries.length,
-        simulationSeed: isLive() ? null : simulationSeed,
+        simulationSeed: shouldSimulateOutcomes() ? simulationSeed : null,
         message:
           `Successfully processed recovery for ${processedJourneyIds.length} failures` +
-          (isLive()
-            ? '.'
-            : `; the response model recovered ${simulatedRecoveries.length} of them (simulated).`),
+          (shouldSimulateOutcomes()
+            ? `; the response model recovered ${simulatedRecoveries.length} of them (simulated).`
+            : '.'),
       },
     });
   } catch (error: unknown) {

@@ -108,6 +108,26 @@ export function getSimulationSeed(): number {
   return parsed;
 }
 
+/**
+ * Whether the declared response model decides recovery outcomes.
+ *
+ * In mock mode it always does — nothing else could, since no real payment can arrive. In live
+ * mode outcomes normally come from Razorpay webhooks, and inventing recoveries alongside real
+ * ones would corrupt a real merchant's numbers.
+ *
+ * `SIMULATE_OUTCOMES=true` overrides that for the case the two modes could not previously serve
+ * together: a demo that wants real Gemini copy and real payment links *and* a populated recovery
+ * rate, without waiting for 150 people to pay. It is deliberately a separate switch rather than a
+ * widening of "mock", so the choice is visible in the environment, and `GET /api/metrics` reports
+ * it in `provenance` so the dashboard keeps saying the figures are simulated.
+ *
+ * A deployment carrying real merchant traffic must leave it unset.
+ */
+export function shouldSimulateOutcomes(): boolean {
+  if (!isLive()) return true;
+  return (process.env.SIMULATE_OUTCOMES || '').trim().toLowerCase() === 'true';
+}
+
 /** One line at startup naming what is actually wired, so a silent downgrade is visible. */
 export function describeIntegrations(): string {
   const mode = getMode();

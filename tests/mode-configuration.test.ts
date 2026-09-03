@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { getMode, isLive, readCredential, requireCredential, getGeminiModel, describeIntegrations } from '../src/lib/config';
+import { getMode, isLive, readCredential, requireCredential, getGeminiModel, describeIntegrations, shouldSimulateOutcomes } from '../src/lib/config';
 
 /**
  * RA-24 — mock vs live is declared, not inferred from the shape of a credential, and live
@@ -96,5 +96,40 @@ describe('credentials are never read at module scope', () => {
 
     const { gemini } = await import('../src/lib/ai/gemini');
     expect(() => gemini.isAvailable()).toThrow(/GEMINI_API_KEY is missing or still a placeholder/);
+  });
+});
+
+describe('SIMULATE_OUTCOMES', () => {
+  /**
+   * Mock and live were mutually exclusive in a way that served no demo well: mock gave a
+   * populated recovery rate with no AI anywhere, live gave real Gemini copy and real payment
+   * links with nothing ever resolving. This flag is the seam between them, and it must stay
+   * explicit — a live deployment carrying real merchant traffic cannot have simulated recoveries
+   * appear in its numbers by accident.
+   */
+  it('always simulates in mock mode, where nothing else could decide an outcome', () => {
+    vi.stubEnv('RECOVERAI_MODE', 'mock');
+    vi.stubEnv('SIMULATE_OUTCOMES', '');
+    expect(shouldSimulateOutcomes()).toBe(true);
+  });
+
+  it('does not simulate in live mode by default', () => {
+    vi.stubEnv('RECOVERAI_MODE', 'live');
+    vi.stubEnv('SIMULATE_OUTCOMES', '');
+    expect(shouldSimulateOutcomes()).toBe(false);
+  });
+
+  it('simulates in live mode only when explicitly asked', () => {
+    vi.stubEnv('RECOVERAI_MODE', 'live');
+    vi.stubEnv('SIMULATE_OUTCOMES', 'true');
+    expect(shouldSimulateOutcomes()).toBe(true);
+  });
+
+  it('treats anything other than "true" as off', () => {
+    vi.stubEnv('RECOVERAI_MODE', 'live');
+    for (const value of ['false', '1', 'yes', 'TRUE ', 'maybe']) {
+      vi.stubEnv('SIMULATE_OUTCOMES', value);
+      expect(shouldSimulateOutcomes(), value).toBe(value.trim().toLowerCase() === 'true');
+    }
   });
 });

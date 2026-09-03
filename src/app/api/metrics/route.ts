@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { customers, paymentFailures, recoveryJourneys, recoveryActions, auditLogs } from '@/lib/db/schema';
 import { desc, eq, ne, sql } from 'drizzle-orm';
-import { getMode, getSimulationSeed, isLive } from '@/lib/config';
+import { getMode, getSimulationSeed, shouldSimulateOutcomes } from '@/lib/config';
 
 export const dynamic = 'force-dynamic';
 
@@ -349,8 +349,11 @@ export async function GET() {
         // simulated is the same class of error as the reverse (RA-23).
         provenance: {
           mode: getMode(),
-          outcomesAreSimulated: !isLive(),
-          simulationSeed: isLive() ? null : getSimulationSeed(),
+          // Reports what is actually true rather than inferring it from the mode: a live
+          // deployment with SIMULATE_OUTCOMES=true still produces simulated recoveries, and the
+          // dashboard must keep saying so.
+          outcomesAreSimulated: shouldSimulateOutcomes(),
+          simulationSeed: shouldSimulateOutcomes() ? getSimulationSeed() : null,
         },
       },
     });
