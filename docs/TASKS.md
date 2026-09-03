@@ -1,7 +1,13 @@
 # RecoverAI — Task Tracker
 
-**Last Updated:** 2026-08-21  
+**Last Updated:** 2026-09-01  
 **Legend:** ⬜ Not Started · 🟡 In Progress · ✅ Done · ❌ Blocked
+
+> **Definition of done (RA-30):** a task is ✅ only when the behaviour is *reachable in the
+> running application* and there is a named artifact behind it — a file, a route, or a test. Not
+> when the code exists. `RA-12` (a communication layer that was written, marked done, and
+> unreachable) and `RA-31` (a virtual clock that was defined and referenced by nothing) were both
+> ✅ under the looser reading. Every row below now names its artifact; a row that cannot is not ✅.
 
 > **Source of truth: [GitHub Issues](https://github.com/archittmittal/Recover-AI/issues).**
 > Every task below has a matching issue. Work is done on a branch, opened as a PR containing
@@ -44,7 +50,7 @@
 | 2.10 | Strategy selection engine | ✅ | Agent | `src/lib/recovery/strategies.ts` — 4 strategy buckets |
 | 2.11 | Recovery Coordinator (state machine) | ✅ | Agent | `src/lib/recovery/coordinator.ts` — orchestrates full journey lifecycle |
 | 2.12 | Retry scheduler with contact-hours gating | ✅ | Agent | `src/lib/recovery/scheduler.ts` — defer outside 8AM–7PM IST |
-| 2.13 | Stopping rule enforcement | ✅ | Agent | Inside coordinator: payment success, STOP, exhaustion, DND, hours |
+| 2.13 | Stopping rule enforcement | ✅ | Agent | `src/lib/recovery/stopping-rules.ts`, called from the coordinator before every attempt; covered by `tests/stopping-rules.test.ts` and `tests/contact-hours-enforcement.test.ts` |
 | 2.14 | Recovery trigger API route | ✅ | Agent | `POST /api/recovery/trigger` — process all pending failures |
 
 ---
@@ -110,6 +116,7 @@
 | 6.7 | End-to-end smoke test | ✅ | Agent | `tests/e2e-smoke.test.ts` verifying seed → recover → settle → STOP → sweep → audit |
 | 6.8 | Code cleanup & comments | ✅ | Agent | TypeScript strict mode, JSDoc annotations, and 0 lint warnings |
 | 6.9 | 5-minute pitch video script | ✅ | Agent | Word-for-word narrative in `docs/DEMO_SCRIPT.md` |
+| 6.10 | Record the 5-minute pitch video | ⬜ | Human | **Not recorded.** A required submission field — the script being written is not the same task ([RA-27](https://github.com/archittmittal/Recover-AI/issues/165)) |
 
 ---
 
@@ -146,28 +153,39 @@
 | 8.3 | Baseline comparison harness (arms A/B/C) | ✅ | Agent | `payment_failures.arm` cohorts + per-arm rates in `src/app/api/metrics/route.ts`; all three measured from their own journeys, C − B reported signed (RA-22) |
 | 8.4 | Checkout abandonment sweep job | ✅ | Agent | `src/lib/recovery/abandonment-sweep.ts` & `/api/recovery/sweep` |
 | 8.5 | `merchant_alert` strategy | ✅ | Agent | Surfaces business/internal configuration declines to merchant |
-| 8.6 | Batch evaluation report + export | ✅ | Agent | Metric cards, scenario breakdown, channel escalation analysis |
+| 8.6 | Batch evaluation report + export | 🟡 | Agent | Report yes — metric cards, scenario breakdown, channel escalation, and `npm run eval:arms` for the replicated three-arm result. **Export not built:** no CSV/download path exists anywhere in `src/` |
 | 8.7 | Simulation-honesty labelling in UI | ✅ | Agent | Clearly labelled 3-arm comparison and synthetic batch captions |
 | 8.8 | `docs/AI_DECISIONS.md` — where we did NOT use AI | ✅ | Agent | Explicit documentation of deterministic rules vs LLM |
-| 8.9 | Maintain `docs/ENGINEERING_LOG.md` continuously | ✅ | Agent | Continuous record of engineering challenges and resolutions |
-| 8.10 | Hosted demo deployment | ✅ | Agent | `docs/DEPLOYMENT.md` with libSQL/Turso serverless guide |
-| 8.11 | Responsive + accessibility pass | ✅ | Agent | Tailwind responsive layout & accessible badges |
+| 8.9 | Maintain `docs/ENGINEERING_LOG.md` continuously | 🟡 | Agent | Corrected under RA-29, but the newest entry is still **2026-08-21**. RA-22, RA-23, RA-31, RA-32 and RA-05 all shipped after that and none is recorded — "continuously" is not currently true |
+| 8.10 | Hosted demo deployment | ⬜ | Agent | **No hosted demo exists.** `docs/DEPLOYMENT.md:38` instructs `DATABASE_URL=libsql://…`, but no libSQL driver is installed and `src/lib/db/index.ts` rejects any non-`file:` URL — the documented deployment cannot boot ([RA-28](https://github.com/archittmittal/Recover-AI/issues/166)) |
+| 8.11 | Responsive + accessibility pass | 🟡 | Agent | Responsive layout is real (Tailwind breakpoints throughout). Accessibility is 23 `aria-*` attributes across 6 files and no audit against a standard — enough to claim effort, not a pass |
 
 ---
 
 ## Progress Summary
 
-| Phase | Total Tasks | Done | In Progress | Not Started |
+Counted from the rows above, not maintained by hand — the previous summary read 83/83 while task
+8.3 was two hardcoded constants and 8.10 described a deployment that cannot boot (RA-30).
+
+| Phase | Total Tasks | ✅ Done | 🟡 In Progress | ⬜ Not Started |
 | :--- | :--- | :--- | :--- | :--- |
 | Phase 1: Foundation | 11 | 11 | 0 | 0 |
 | Phase 2: Agent Core | 14 | 14 | 0 | 0 |
 | Phase 3: Communication | 8 | 8 | 0 | 0 |
 | Phase 4: Dashboard | 13 | 13 | 0 | 0 |
 | Phase 5: Simulator | 6 | 6 | 0 | 0 |
-| Phase 6: Polish | 9 | 9 | 0 | 0 |
+| Phase 6: Polish | 10 | 9 | 0 | 1 |
 | Phase 7: Correctness & Verification | 11 | 11 | 0 | 0 |
-| Phase 8: Evaluation & Credibility | 11 | 11 | 0 | 0 |
-| **Total** | **83** | **83** | **0** | **0** |
+| Phase 8: Evaluation & Credibility | 11 | 7 | 3 | 1 |
+| **Total** | **84** | **79** | **3** | **2** |
+
+`tests/task-board-consistency.test.ts` parses the rows above and fails if these numbers disagree
+with them. The first draft of this very summary was wrong by one row — which is precisely how the
+board reached 83/83 — so the count is now checked by the suite rather than by whoever edits it.
+
+The five rows that are not ✅: 6.10 (RA-27, the video), 8.6 (no export path), 8.9 (RA-29's log is
+stale again), 8.10 (RA-28, no hosted demo), 8.11 (accessibility never audited). Nothing is marked
+done here that the tracker still has open.
 
 ### Critical path
 
@@ -176,11 +194,29 @@ one is load-bearing for a specific judging criterion:
 
 | Task | Why it cannot be cut |
 | :--- | :--- |
-| 8.1 Virtual clock | Without it, `smart_retry` and contact-hours deferral are undemonstrable — two of the four strategies and the best compliance evidence |
-| 8.3 Baseline arms | A recovery rate without a baseline is unfalsifiable and reads as marketing |
+| 8.1 Virtual clock | Without it, `smart_retry` and contact-hours deferral are undemonstrable — two of the four strategies and the best compliance evidence. Built under RA-31; it was a class definition nothing referenced until then |
+| 8.3 Baseline arms | A recovery rate without a baseline is unfalsifiable and reads as marketing. Built under RA-22; the measured result is currently **C − B = +2.8 pts**, and `docs/SIMULATION_MODEL.md` records why that number moved |
 | 7.8 Stopping-rule tests | "Would you trust it" — these are the safety invariants |
 | 8.9 Engineering log | The form field the organisers say they read first; cannot be honestly reconstructed late |
 | 7.3 `error_source` taxonomy | Misrouting a large share of UPI traffic in front of Razorpay engineers |
+
+---
+
+## Integrity review (RA-01 – RA-32)
+
+Phases 1–8 are the build. Separately, a readiness review filed 32 findings as GitHub issues,
+`RA-01` through `RA-32`, each fixed on its own branch with a `Closes #<issue>` PR. They are not
+listed row-by-row here because the tracker already holds them and a hand-copied second list is
+exactly how this board drifted in the first place.
+
+**28 closed · 4 open** as of 2026-09-01. The open four are the ones reflected above:
+
+| Issue | What remains |
+| :--- | :--- |
+| [RA-27](https://github.com/archittmittal/Recover-AI/issues/165) · critical | The pitch video is not recorded |
+| [RA-28](https://github.com/archittmittal/Recover-AI/issues/166) · high | No hosted demo; libSQL/Turso never implemented |
+| [RA-30](https://github.com/archittmittal/Recover-AI/issues/168) · medium | This audit |
+| [RA-26](https://github.com/archittmittal/Recover-AI/issues/164) · low | README described a committed database file |
 
 ---
 
@@ -188,6 +224,6 @@ one is load-bearing for a specific judging criterion:
 
 | Dependency | Required By | Status |
 | :--- | :--- | :--- |
-| Razorpay test API keys | Phase 2 (task 2.3) | ⬜ Need to create Razorpay account & get test keys |
-| Gemini API key | Phase 2 (task 2.6) | ⬜ Need to get from Google AI Studio |
+| Razorpay test API keys | Phase 2 (task 2.3) | ✅ Configured locally in `.env` (RA-24). Not in CI — CI runs `RECOVERAI_MODE=mock` |
+| Gemini API key | Phase 2 (task 2.6) | ✅ Configured locally in `.env` (RA-24). Not in CI — CI runs `RECOVERAI_MODE=mock` |
 | Node.js 18+ installed | Phase 1 (task 1.1) | ✅ Verified (running on Node.js v25) |

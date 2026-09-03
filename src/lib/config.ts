@@ -13,9 +13,20 @@
 
 export type RecoverAiMode = 'mock' | 'live';
 
-/** Credentials still holding their .env.example placeholder value. */
+/**
+ * A value still holding its `.env.example` template form.
+ *
+ * Exported because the auth layer needs exactly this test and nothing more: a session secret
+ * containing the substring "mock" is a perfectly good secret, while one containing the
+ * `XXXXXXXX` marker is the literal text shipped in the public repository.
+ */
+export function isTemplatePlaceholder(value: string | undefined): boolean {
+  return !value || value.includes('XXXXXXXX');
+}
+
+/** Credentials still holding their .env.example placeholder value, or explicitly mocked. */
 function isPlaceholder(value: string | undefined): boolean {
-  return !value || value.includes('XXXXXXXX') || value.includes('mock');
+  return isTemplatePlaceholder(value) || value!.includes('mock');
 }
 
 export function getMode(): RecoverAiMode {
@@ -47,7 +58,14 @@ export function readCredential(name: string): string | undefined {
 
 export function requireCredential(name: string): string | undefined {
   const value = process.env[name];
-  if (!isLive()) return isPlaceholder(value) ? undefined : value;
+
+  // Mock mode hands out no credentials, even real ones. `.env.example` promises "mock (default)
+  // — no outbound calls; payment links and LLM copy are simulated", and that was false: a
+  // configured GEMINI_API_KEY was returned here, so the Gemini client initialised and every
+  // journey made a live LLM call. A mock-mode batch run took two minutes of real API traffic,
+  // and the deployed webhook handler spent seconds per delivery on a call the mode says it does
+  // not make. Set RECOVERAI_MODE=live to actually use the models.
+  if (!isLive()) return undefined;
 
   if (isPlaceholder(value)) {
     throw new Error(
@@ -88,6 +106,26 @@ export function getSimulationSeed(): number {
     throw new Error(`[config] Invalid SIMULATION_SEED="${raw}". Expected an integer.`);
   }
   return parsed;
+}
+
+/**
+ * Whether the declared response model decides recovery outcomes.
+ *
+ * In mock mode it always does — nothing else could, since no real payment can arrive. In live
+ * mode outcomes normally come from Razorpay webhooks, and inventing recoveries alongside real
+ * ones would corrupt a real merchant's numbers.
+ *
+ * `SIMULATE_OUTCOMES=true` overrides that for the case the two modes could not previously serve
+ * together: a demo that wants real Gemini copy and real payment links *and* a populated recovery
+ * rate, without waiting for 150 people to pay. It is deliberately a separate switch rather than a
+ * widening of "mock", so the choice is visible in the environment, and `GET /api/metrics` reports
+ * it in `provenance` so the dashboard keeps saying the figures are simulated.
+ *
+ * A deployment carrying real merchant traffic must leave it unset.
+ */
+export function shouldSimulateOutcomes(): boolean {
+  if (!isLive()) return true;
+  return (process.env.SIMULATE_OUTCOMES || '').trim().toLowerCase() === 'true';
 }
 
 /** One line at startup naming what is actually wired, so a silent downgrade is visible. */

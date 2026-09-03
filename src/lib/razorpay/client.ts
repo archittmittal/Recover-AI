@@ -8,17 +8,30 @@ import { nanoid } from 'nanoid';
 import { isLive, requireCredential } from '../config';
 
 export class RazorpayClient {
-  private keyId: string;
-  private keySecret: string;
+  private keyId = '';
+  private keySecret = '';
   private baseUrl: string;
+  private initialised = false;
 
   constructor() {
-    this.keyId = requireCredential('RAZORPAY_KEY_ID') || '';
-    this.keySecret = requireCredential('RAZORPAY_KEY_SECRET') || '';
     this.baseUrl = 'https://api.razorpay.com/v1';
   }
 
+  /**
+   * Read on first use rather than at construction, for the same reason as GeminiClient: this
+   * module is evaluated during `next build`, and a credential read there makes the build depend
+   * on runtime secrets. A live-mode build with no keys in its environment failed before any
+   * request was served.
+   */
+  private ensureInitialised(): void {
+    if (this.initialised) return;
+    this.initialised = true;
+    this.keyId = requireCredential('RAZORPAY_KEY_ID') || '';
+    this.keySecret = requireCredential('RAZORPAY_KEY_SECRET') || '';
+  }
+
   private getAuthHeader(): string {
+    this.ensureInitialised();
     const auth = Buffer.from(`${this.keyId}:${this.keySecret}`).toString('base64');
     return `Basic ${auth}`;
   }
@@ -29,6 +42,7 @@ export class RazorpayClient {
    * remaining check is only a defensive guard.
    */
   private isMockMode(): boolean {
+    this.ensureInitialised();
     return !isLive() || !this.keyId || !this.keySecret;
   }
 

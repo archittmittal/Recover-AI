@@ -4,16 +4,22 @@ on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
 
+# Least privilege by default (OpenSSF Scorecard, Token-Permissions). The semantic-title check
+# reads pull request metadata, so that scope is granted explicitly rather than inherited.
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   pr-metadata:
     name: Verify PR Title & Issue Traceability
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Validate Conventional Commit Title
-        uses: amannn/action-semantic-pull-request@v6
+        uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -31,7 +37,7 @@ jobs:
           requireScope: false
 
       - name: Validate Issue Linkage
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const prBody = context.payload.pull_request.body || '';
@@ -50,7 +56,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Assert No Simulation Imports in Agent Engine
         run: |

@@ -148,55 +148,32 @@ export function BatchControls({ onActionComplete }: BatchControlsProps) {
     }
   };
 
-  const handleSimulateWebhook = async (scenario: 'one_time' | 'subscription') => {
+  /**
+   * Asks the server to sign a simulated delivery and feed it to the real webhook handler
+   * (`/api/simulator/webhook`). This used to POST an unsigned payload straight at
+   * `/api/webhooks/razorpay`, which has answered 400 ever since RA-01 made signature
+   * verification mandatory — both buttons were dead. The secret cannot come to the browser, so
+   * the signing has to happen server-side.
+   */
+  const handleSimulateWebhook = async (scenario: 'card_decline' | 'mandate_failure') => {
     setIsSendingWebhook(true);
-    setStatusMessage(`Simulating Razorpay webhook for ${scenario.replace(/_/g, ' ')}...`);
+    setStatusMessage(`Signing and delivering a simulated ${scenario.replace('_', ' ')} webhook...`);
     try {
-      const payload = {
-        id: `evt_sim_${Date.now()}`,
-        entity: 'event',
-        account_id: 'acc_demo_test',
-        event: scenario === 'subscription' ? 'subscription.pending' : 'payment.failed',
-        contains: ['payment'],
-        payload: {
-          payment: {
-            entity: {
-              id: `pay_sim_${Date.now()}`,
-              amount: scenario === 'subscription' ? 149900 : 299900,
-              currency: 'INR',
-              status: 'failed',
-              order_id: `order_sim_${Date.now()}`,
-              method: scenario === 'subscription' ? 'emandate' : 'card',
-              email: 'aarav.sharma@example.com',
-              contact: '+919876543210',
-              error_code: 'BAD_REQUEST_ERROR',
-              error_description: 'Payment authorization failed.',
-              error_source: 'customer',
-              error_step: 'authorization',
-              error_reason: scenario === 'subscription' ? 'mandate_inactive' : 'insufficient_funds',
-              notes: {
-                customer_name: 'Aarav Sharma',
-              },
-            },
-          },
-        },
-      };
-
-      const res = await fetch('/api/webhooks/razorpay', {
+      const res = await fetch('/api/simulator/webhook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ scenario }),
       });
       const json = await res.json();
       if (json.success) {
-        setStatusMessage(`Webhook received & journey initiated! (ID: ${json.data.eventId})`);
+        setStatusMessage(json.data.message);
         onActionComplete();
       } else {
-        setStatusMessage(`Webhook error: ${json.error?.message}`);
+        setStatusMessage(`Webhook error: ${json.error?.message || json.data?.message}`);
       }
     } catch (err) {
       console.error('Webhook error:', err);
-      setStatusMessage('Failed to simulate webhook.');
+      setStatusMessage('Failed to simulate the webhook delivery.');
     } finally {
       setIsSendingWebhook(false);
     }
@@ -319,28 +296,28 @@ export function BatchControls({ onActionComplete }: BatchControlsProps) {
         {/* Live Webhook Injection Buttons */}
         <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 space-y-2">
           <div className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-            Simulate Incoming Razorpay Webhook Event:
+            Simulate a Signed Razorpay Webhook Delivery:
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <Button
               variant="outline"
               size="sm"
-              onClick={() => handleSimulateWebhook('one_time')}
+              onClick={() => handleSimulateWebhook('card_decline')}
               disabled={isSendingWebhook}
               className="text-xs justify-start h-8"
             >
               <Send className="w-3.5 h-3.5 mr-1.5 text-amber-600" />
-              payment.failed (One-Time)
+              payment.failed (card decline)
             </Button>
             <Button
               variant="outline"
               size="sm"
-              onClick={() => handleSimulateWebhook('subscription')}
+              onClick={() => handleSimulateWebhook('mandate_failure')}
               disabled={isSendingWebhook}
               className="text-xs justify-start h-8"
             >
               <Send className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
-              subscription.pending (Mandate)
+              payment.failed (mandate)
             </Button>
           </div>
         </div>

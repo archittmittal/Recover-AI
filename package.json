@@ -12,11 +12,13 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:check": "drizzle-kit check",
-    "eval:arms": "vitest run --config vitest.eval.mts"
+    "eval:arms": "vitest run --config vitest.eval.mts scripts/evaluate-arms.eval.ts",
+    "db:verify": "vitest run --config vitest.eval.mts scripts/deploy-check.eval.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
     "@google/generative-ai": "^0.24.1",
+    "@libsql/client": "^0.17.4",
     "better-sqlite3": "^13.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

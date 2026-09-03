@@ -164,7 +164,11 @@ The seeded batch materialises the **same 50 failures into three cohorts** (RA-22
 | **C** | Classification, per-failure strategy, personalised copy, channel escalation. | What does the intelligence add? |
 
 Cloning the batch rather than partitioning it holds the failure mix, the amounts and the customer
-segments identical across arms by construction. Partitioning 50 failures three ways would have
+segments identical across arms by construction. Only the seeded cohorts enter the comparison: a
+failure arriving from a live webhook is stamped arm `C` so the agent handles it and the dashboard
+counts it, but it has no counterpart in arms A and B, and letting it in would destroy the very
+property this design exists for. Seeded rows carry a `simulation_key`; ingested ones do not, which
+is what the metrics query filters on. Partitioning 50 failures three ways would have
 left ~17 per arm and a mix that matched only approximately.
 
 **Common random numbers.** Every failure carries a `simulation_key` that is the same in all three
@@ -268,8 +272,17 @@ The agent cannot read the model it is scored against, so it cannot mark its own 
 directions are asserted in `tests/simulation-response-model.test.ts` and the first is also
 enforced in CI by the architectural boundary job in `.github/workflows/pr-governance.yml`.
 
-**In `RECOVERAI_MODE=live` no draw is ever taken.** Real customers and real Razorpay webhooks
-decide outcomes; inventing recoveries alongside them would corrupt a real merchant's numbers.
+**In `RECOVERAI_MODE=live` no draw is taken unless `SIMULATE_OUTCOMES=true`.** By default real
+customers and real Razorpay webhooks decide outcomes there; inventing recoveries alongside them
+would corrupt a real merchant's numbers.
+
+That flag exists for the one case the two modes could not serve together — a demo that wants real
+LLM copy and real payment links *and* a populated recovery rate, without waiting for 150 people to
+pay. It is a separate switch rather than a widening of "mock" precisely so the choice is visible
+in the environment rather than implied by the mode, and `GET /api/metrics` reports what is
+actually true under `provenance.outcomesAreSimulated`. The dashboard's "Simulated figures" notice
+therefore stays accurate on a live deployment running with the flag on, which is the entire reason
+that labelling machinery exists. A deployment carrying real merchant traffic leaves it unset.
 
 The manual **Pay** button in the simulator still works, so the live demo keeps its moment. It is
 now additive rather than the only source of outcomes.

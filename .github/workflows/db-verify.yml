@@ -16,22 +16,28 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege by default (OpenSSF Scorecard, Token-Permissions). With no top-level block the
+# job token inherits the repository default, which may be read/write on every scope — far more
+# than any step here needs.
+permissions:
+  contents: read
+
 jobs:
   schema-sync:
     name: Check Schema Migration Drift
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup Node.js 22.x
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22.x
           cache: 'npm'
 
       - name: Install Dependencies
-        run: npm install
+        run: npm ci
 
       - name: Generate Schema Diff Check
         run: |
