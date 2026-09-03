@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { customers, paymentFailures, recoveryJourneys, recoveryActions, auditLogs } from '@/lib/db/schema';
-import { desc, eq, sql } from 'drizzle-orm';
+import { desc, eq, ne, sql } from 'drizzle-orm';
 import { getMode, getSimulationSeed, isLive } from '@/lib/config';
 
 export const dynamic = 'force-dynamic';
@@ -261,6 +261,13 @@ export async function GET() {
     // arm's own journeys — the same expression the headline uses — so no numeric literal stands
     // in for a measurement. Arm A's rate is 0 because it never contacts anyone, not because a
     // zero was typed here; if a journey in arm A ever recovered, this would report it.
+    //
+    // Restricted to the seeded experiment cohorts. A failure ingested from a live webhook is
+    // stamped arm 'C' so the agent treats it normally and the dashboard counts it — but it has no
+    // counterpart in arms A and B, so letting it into the comparison destroys the one property
+    // the arms are built on: identical data. Observed on the deployment, where seven injected
+    // webhooks had grown arm C to 57 against 50 apiece, each new one dragging C's rate down and
+    // understating the agent. Seeded rows carry a `simulation_key`; ingested rows do not.
     const armAgg = await db
       .select({
         arm: recoveryJourneys.arm,
@@ -270,6 +277,8 @@ export async function GET() {
         recoveredPaise: sql<number>`COALESCE(SUM(${recoveryJourneys.amountRecovered}), 0)`,
       })
       .from(recoveryJourneys)
+      .innerJoin(paymentFailures, eq(recoveryJourneys.failureId, paymentFailures.id))
+      .where(ne(paymentFailures.simulationKey, ''))
       .groupBy(recoveryJourneys.arm);
 
     const armDefinitions: { arm: 'A' | 'B' | 'C'; label: string; description: string }[] = [

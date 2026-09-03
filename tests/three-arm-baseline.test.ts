@@ -238,6 +238,77 @@ describe('RA-22 measured baseline comparison', () => {
     );
   });
 
+  /**
+   * A failure ingested from a live webhook is stamped arm 'C' — the agent should treat it
+   * normally and the dashboard should count it — but it has no counterpart in arms A and B. Left
+   * in the comparison it destroys the property the arms exist for: identical data. Seen on the
+   * deployment, where seven injected webhooks had grown arm C to 57 against 50 apiece.
+   */
+  it('excludes webhook-ingested failures from the comparison', async () => {
+    const before = await getMetrics().then((r) => r.json());
+    const armCBefore = before.data.baselineComparison.arms.find((a: { arm: string }) => a.arm === 'C');
+
+    // An ingested failure looks exactly like a seeded one except that it carries no
+    // simulation_key — nothing generated it against the declared response model.
+    const suffix = crypto.randomUUID();
+    await db.insert(customers).values({
+      id: `cust_ingested_${suffix}`,
+      name: 'Ingested Customer',
+      email: `ingested-${suffix}@example.com`,
+      phone: '+919876500555',
+      preferredLanguage: 'en',
+      segment: 'b2c',
+      totalFailures: 1,
+      totalRecoveredAmount: 0,
+      dndStatus: 'active',
+      createdAt: DAYTIME,
+      updatedAt: DAYTIME,
+    });
+    await db.insert(paymentFailures).values({
+      id: `fail_ingested_${suffix}`,
+      customerId: `cust_ingested_${suffix}`,
+      razorpayPaymentId: `pay_${suffix}`,
+      razorpayOrderId: `order_${suffix}`,
+      amount: 999900,
+      currency: 'INR',
+      paymentMethod: 'card',
+      failureType: 'one_time',
+      errorCode: 'BAD_REQUEST_ERROR',
+      errorSource: 'customer',
+      errorStep: 'authorization',
+      errorReason: 'insufficient_funds',
+      errorDescription: 'Arrived by webhook, not by seed.',
+      arm: 'C',
+      simulationKey: '',
+      createdAt: DAYTIME,
+    });
+    await db.insert(recoveryJourneys).values({
+      id: `rj_ingested_${suffix}`,
+      customerId: `cust_ingested_${suffix}`,
+      failureId: `fail_ingested_${suffix}`,
+      status: 'recovering',
+      strategy: 'payment_link',
+      arm: 'C',
+      amountAtRisk: 999900,
+      amountRecovered: 0,
+      maxAttempts: 3,
+      currentAttempt: 1,
+      currentChannel: 'whatsapp',
+      createdAt: DAYTIME,
+      updatedAt: DAYTIME,
+    });
+
+    const after = await getMetrics().then((r) => r.json());
+    const armCAfter = after.data.baselineComparison.arms.find((a: { arm: string }) => a.arm === 'C');
+
+    expect(armCAfter.journeyCount).toBe(armCBefore.journeyCount);
+    expect(armCAfter.atRiskPaise).toBe(armCBefore.atRiskPaise);
+
+    // Still the same size as the arms it is compared against — the whole point.
+    const armB = after.data.baselineComparison.arms.find((a: { arm: string }) => a.arm === 'B');
+    expect(armCAfter.journeyCount).toBe(armB.journeyCount);
+  });
+
   it('reports Arm A as zero because it recovered nothing, not because a zero was typed', async () => {
     const res = await getMetrics();
     const json = await res.json();

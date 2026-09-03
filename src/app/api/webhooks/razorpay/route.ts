@@ -16,17 +16,26 @@ export const dynamic = 'force-dynamic';
 
 
 /**
- * Makes a request-derived value safe to log (CodeQL js/log-injection).
+ * Every event this handler is willing to name in a log line.
  *
- * `payload.event` comes from the request body. Signature verification runs first, so only a
- * holder of the webhook secret can reach these lines — but a newline in a logged value forges
- * log entries wherever those logs are shipped, and "an attacker would need the secret" is a
- * reason to rank the risk low, not to interpolate raw request data into a log at all.
+ * An allowlist rather than a scrubbing regex. The first attempt at this stripped unsafe
+ * characters from `payload.event`, which is sound — but CodeQL kept flagging it (js/log-injection)
+ * because it cannot prove an arbitrary regex sanitises, and a reader cannot either without
+ * working through the character class. Mapping to a fixed set removes the question: nothing that
+ * reaches the log came from the request body at all, it came from this array.
  */
+const LOGGABLE_EVENTS = [
+  'payment.failed',
+  'payment.captured',
+  'payment_link.paid',
+  'subscription.pending',
+  'subscription.halted',
+  'subscription.charged',
+] as const;
+
 function forLog(value: unknown): string {
-  return String(value ?? '')
-    .replace(/[^\w.:@ -]/g, '')
-    .slice(0, 64);
+  const match = LOGGABLE_EVENTS.find((known) => known === value);
+  return match ?? 'unrecognised_event';
 }
 
 /** `recov_<journeyId>_att<n>` — the reference the coordinator stamps on every link it creates. */
