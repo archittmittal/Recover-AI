@@ -13,7 +13,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:check": "drizzle-kit check",
     "eval:arms": "vitest run --config vitest.eval.mts scripts/evaluate-arms.eval.ts",
-    "db:verify": "vitest run --config vitest.eval.mts scripts/deploy-check.eval.ts"
+    "db:verify": "vitest run --config vitest.eval.mts scripts/deploy-check.eval.ts",
+    "demo:populate": "vitest run --config vitest.eval.mts scripts/populate-demo.eval.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
