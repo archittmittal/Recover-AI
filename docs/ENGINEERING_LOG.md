@@ -11,6 +11,66 @@ containing only successes is not a log.
 
 ---
 
+## 2026-09-05 — The same defect, fixed once, still live in the place that mattered most
+
+**What broke:** Rehearsing the demo video against the running app, rather than reading the script.
+Two defects, and the second one is the interesting half.
+
+**1. Every customer's audit timeline was showing the control arm.**
+
+The seeded batch gives each customer one journey per experiment arm. `GET /api/customers/[id]` took
+`journeys[0]` with no ordering, so it returned whichever row the driver produced first — in practice
+**arm A**, the no-outreach control. That is the one journey guaranteed to have no dispatch, no
+escalation and no stopping rule. So the audit timeline — the artefact Track 3 grades under "audit
+trails and explainability" — rendered as the emptiest version of itself for every customer in the
+batch. Five rows where the agent's own journey had eleven.
+
+This exact defect was found and fixed on 2026-09-01 in `api/simulator/pay`, where an unqualified
+`limit(1)` resolved arm A and put ₹6,173 into the no-agent control. That fix has a test
+(`simulator-pay-control-arm.test.ts`) and the test still passes. It was fixed *at the call site*, and
+there were two call sites.
+
+**2. `clock_advanced` was written and displayed nowhere.**
+
+Clock advances carry a null `journey_id` deliberately — moving simulated time is a process-wide act,
+and attaching it to an arbitrary customer would put a false entry in their history. But the timeline
+query filters on `journey_id = journey.id`, so every one of those rows was recorded and then visible
+in no interface at all. The audit trail could not evidence the single thing that makes contact-hours
+deferral legible instead of an unexplained gap: that time moved, when, and by how much.
+
+The demo script had a line pointing at the timeline and saying the rows were there. They were in the
+database. They were not on the screen. Nobody had checked, because the sentence is true of the system
+and false of the page, and only one of those gets read aloud.
+
+**How we got out:** The journey query orders by arm descending and prefers C. Process-wide events are
+merged into the timeline, scoped to that journey's lifetime so the page stays a record of the journey
+rather than of the whole deployment, badged `System-wide · not customer-specific`, and — at an equal
+timestamp — ordered *before* the work they unblocked, since an advance and the dispatch it enables
+share an instant and the reverse order reads as effect-then-cause.
+
+`tests/customer-audit-timeline.test.ts` covers all four properties. Reverting the route fails three
+of them, which is the bar set on 2026-08-26 and the only reason to trust the other twenty-eight.
+
+The same pass corrected three claims in `DEMO_SCRIPT.md` that had drifted from the code: the suite
+was described as "21 automated invariant tests" when it is 335 across 48 files, audit events were
+described as cryptographically hashed when `audit_logs` has no hash column (the SHA-256 hash is on
+`webhook_events`, for replay protection — a different claim), and a 15–20% GMV figure was quoted with
+no source.
+
+**What we took from this:** A fix applied at the call site does not fix the shape that caused it. The
+three-journeys-per-customer invariant is a property of the seeded data, so *every* query that reaches
+for "the journey for this customer" inherits it, and patching the one that was noticed left the
+others silently wrong. The version that hurts is not the bug you fix badly — it is the bug you fix
+well, in one place, and then stop looking for.
+
+And the second defect is the 2026-08-31 lesson arriving in a new costume. That entry closed on: a
+fallback that is too good hides the thing it is falling back from. This one is the display layer's
+version — a row that is written correctly, tested at the unit that writes it, and rendered by nothing.
+Both are only findable by running the path and looking at what a human would actually see. Neither a
+type, a linter, nor a green suite has an opinion about a record nobody displays.
+
+---
+
 ## 2026-08-31 — The AI had never run, and three separate things were hiding behind the silence
 
 **What broke:** Nothing, visibly. That was the problem.
