@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { customers, paymentFailures, recoveryJourneys, recoveryActions, auditLogs } from '@/lib/db/schema';
-import { eq, asc } from 'drizzle-orm';
+import { eq, asc, and, gte, isNull, desc } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,11 +35,19 @@ export async function GET(
       .from(paymentFailures)
       .where(eq(paymentFailures.customerId, id));
 
-    // 3. Fetch recovery journeys
+    // 3. Fetch recovery journeys.
+    //
+    // The seeded batch gives every customer one journey per experiment arm, so an unqualified
+    // `journeys[0]` picked whichever row the driver happened to return first — in practice arm A,
+    // the no-outreach control. That is the one journey guaranteed to have no dispatches, no
+    // escalation and no stopping rules, so the audit timeline for every customer rendered as the
+    // emptiest version of itself. Order by arm descending and prefer C: the agent's own arm is the
+    // one this page is about.
     const journeys = await db
       .select()
       .from(recoveryJourneys)
-      .where(eq(recoveryJourneys.customerId, id));
+      .where(eq(recoveryJourneys.customerId, id))
+      .orderBy(desc(recoveryJourneys.arm));
 
     const journey = journeys[0] || null;
 
@@ -54,24 +62,47 @@ export async function GET(
         .where(eq(recoveryActions.journeyId, journey.id))
         .orderBy(asc(recoveryActions.executedAt));
 
-      const rawLogs = await db
+      const journeyLogs = await db
         .select()
         .from(auditLogs)
         .where(eq(auditLogs.journeyId, journey.id))
         .orderBy(asc(auditLogs.createdAt));
 
-      logs = rawLogs.map((log) => {
-        let parsed = {};
-        try {
-          parsed = JSON.parse(log.eventData);
-        } catch {
-          parsed = { raw: log.eventData };
-        }
-        return {
-          ...log,
-          parsedData: parsed,
-        };
-      });
+      // Process-wide events carry a null journey id on purpose — advancing the demo clock belongs
+      // to no single customer, and attaching it to one would put a false entry in their history.
+      // The consequence was that `clock_advanced` rows were written and then visible nowhere, so
+      // the audit trail could not evidence the one thing that makes contact-hours deferral
+      // demonstrable: that time moved, when, and by how much. Merge them in, scoped to this
+      // journey's lifetime so the timeline stays a record of this journey rather than the whole
+      // deployment, and label them as system-wide in the UI.
+      const systemLogs = await db
+        .select()
+        .from(auditLogs)
+        .where(and(isNull(auditLogs.journeyId), gte(auditLogs.createdAt, journey.createdAt)))
+        .orderBy(asc(auditLogs.createdAt));
+
+      logs = [...journeyLogs, ...systemLogs]
+        .sort((a, b) => {
+          if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? -1 : 1;
+          // A clock advance and the work it unblocked share a timestamp, because the advance is
+          // what made that instant current. Order the advance first so the timeline reads as
+          // cause then effect rather than the reverse.
+          const aSystem = a.journeyId === null ? 0 : 1;
+          const bSystem = b.journeyId === null ? 0 : 1;
+          return aSystem - bSystem;
+        })
+        .map((log) => {
+          let parsed = {};
+          try {
+            parsed = JSON.parse(log.eventData);
+          } catch {
+            parsed = { raw: log.eventData };
+          }
+          return {
+            ...log,
+            parsedData: parsed,
+          };
+        });
     }
 
     return NextResponse.json({
