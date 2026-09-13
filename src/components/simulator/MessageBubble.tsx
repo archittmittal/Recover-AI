@@ -99,8 +99,8 @@ export function MessageBubble({ message, customerName = 'Customer' }: MessageBub
               </>
             )}
           </div>
-          <span className={`font-mono text-[10px] ${isCustomer ? 'text-emerald-100' : 'text-zinc-400'}`}>
-            {message.timestamp}
+          <span className={`font-mono text-[10px] whitespace-nowrap ${isCustomer ? 'text-emerald-100' : 'text-zinc-400'}`}>
+            {formatBubbleTime(message.timestamp)}
           </span>
         </div>
 
@@ -143,4 +143,24 @@ export function MessageBubble({ message, customerName = 'Customer' }: MessageBub
       </div>
     </div>
   );
+}
+
+/**
+ * Renders a stored IST timestamp as a chat time rather than the raw ISO string the database
+ * holds. Falls back to the original text if it is not parseable, so a bad value shows up
+ * rather than silently rendering "Invalid Date".
+ */
+function formatBubbleTime(raw: string): string {
+  if (!raw) return '';
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw;
+
+  return parsed.toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
 }

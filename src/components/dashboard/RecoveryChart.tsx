@@ -14,6 +14,7 @@ import {
 } from 'recharts';
 import { FailureTypeMetric } from '@/app/api/metrics/route';
 import { BaselineComparisonData } from '@/components/dashboard/MetricsCards';
+import { formatRupees } from '@/lib/utils/money';
 
 interface RecoveryChartProps {
   failureMetrics: FailureTypeMetric[];
@@ -53,34 +54,42 @@ export function RecoveryChart({ failureMetrics, baseline }: RecoveryChartProps) 
       {/* Category Breakdown (2 columns) */}
       <Card className="lg:col-span-2 border-zinc-200 dark:border-zinc-800 shadow-xs">
         <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
               <CardTitle className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
-                Revenue Recovery by Payment Scenario
+                Recovery by failure type
               </CardTitle>
               <CardDescription className="text-xs text-zinc-500">
-                Amount At-Risk (₹) vs Successfully Recovered (₹)
+                At risk vs recovered
               </CardDescription>
             </div>
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">
-              50+ Synthetic Batch
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap shrink-0 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">
+              Synthetic batch
             </span>
           </div>
         </CardHeader>
         <CardContent>
           <div className="h-[280px] w-full pt-4">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={categoryData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+              <BarChart data={categoryData} margin={{ top: 10, right: 12, left: 4, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.5} />
                 <XAxis dataKey="name" tickLine={false} tick={{ fontSize: 12 }} />
                 <YAxis
                   tickLine={false}
                   tick={{ fontSize: 12 }}
-                  tickFormatter={(val) => `₹${val >= 1000 ? `${val / 1000}k` : val}`}
+                  width={56}
+                  // Indian units: a ₹6.2L figure read as "₹620k" to nobody in this market.
+                  tickFormatter={(val: number) =>
+                    val >= 100000
+                      ? `₹${(val / 100000).toFixed(1)}L`
+                      : val >= 1000
+                        ? `₹${Math.round(val / 1000)}k`
+                        : `₹${val}`
+                  }
                 />
                 <Tooltip
                   formatter={(val: unknown, name: unknown) => [
-                    `₹${typeof val === 'number' ? val.toLocaleString('en-IN') : String(val)}`,
+                    typeof val === 'number' ? formatRupees(val) : String(val),
                     name === 'atRisk' ? 'At Risk' : 'Recovered',
                   ]}
                   contentStyle={{
@@ -101,17 +110,17 @@ export function RecoveryChart({ failureMetrics, baseline }: RecoveryChartProps) 
       {/* 3-Arm Scientific Baseline Evaluation (1 column) */}
       <Card className="border-zinc-200 dark:border-zinc-800 shadow-xs flex flex-col justify-between">
         <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
               <CardTitle className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
-                Evaluation Arms (A / B / C)
+                Evaluation arms
               </CardTitle>
               <CardDescription className="text-xs text-zinc-500">
                 Same seeded failures in every arm
               </CardDescription>
             </div>
             <span
-              className={`text-xs font-semibold px-2 py-0.5 rounded ${
+              className={`text-xs font-semibold px-2 py-0.5 rounded whitespace-nowrap shrink-0 ${
                 !baseline.isMeasurable
                   ? 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
                   : baseline.netLiftPct >= 0
@@ -148,7 +157,7 @@ export function RecoveryChart({ failureMetrics, baseline }: RecoveryChartProps) 
 
           <div className="mt-4 p-3 rounded-lg bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800 text-[11px] text-zinc-600 dark:text-zinc-400 space-y-1">
             <div className="font-semibold text-zinc-900 dark:text-zinc-200">
-              The honest headline (C − B):
+              The honest headline (C − B)
             </div>
             {baseline.isMeasurable ? (
               <p>

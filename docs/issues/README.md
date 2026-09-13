@@ -1,8 +1,9 @@
 # RecoverAI — Audit Issue Backlog
 
-30 findings, one file per issue. RA-01..RA-21 came from a partner-integration review of
+36 findings, one file per issue. RA-01..RA-21 came from a partner-integration review of
 `recover-ai @ v0.1.0` (all closed except RA-05). RA-22..RA-30 came from a pre-submission
-readiness review against the Razorpay AI Buildathon Track 3 criteria — all open.
+readiness review against the Razorpay AI Buildathon Track 3 criteria. RA-31..RA-36 came from
+interview-round readiness reviews, driving the running app rather than reading it.
 Each file is a complete GitHub issue body: summary, location, evidence, impact, proposed fix,
 acceptance criteria. Labels are in an HTML comment on line 1.
 

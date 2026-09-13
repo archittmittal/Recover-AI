@@ -14,6 +14,12 @@ export interface CustomerListItem {
   segment: string;
   dndStatus: string;
   journeyId: string | null;
+  /**
+   * Experiment arm of this row's journey (RA-22). One customer is seeded into all three arms,
+   * so the list holds up to three rows per person; without this the UI rendered what looked
+   * like duplicated customers with no way to tell them apart.
+   */
+  arm: string | null;
   journeyStatus: string;
   strategy: string;
   amountAtRiskPaise: number;
@@ -99,6 +105,7 @@ export async function GET(req: NextRequest) {
         segment: customers.segment,
         dndStatus: customers.dndStatus,
         journeyId: recoveryJourneys.id,
+        arm: recoveryJourneys.arm,
         journeyStatus: recoveryJourneys.status,
         strategy: recoveryJourneys.strategy,
         amountAtRisk: recoveryJourneys.amountAtRisk,
@@ -161,6 +168,7 @@ export async function GET(req: NextRequest) {
         segment: row.segment,
         dndStatus: row.dndStatus,
         journeyId: row.journeyId ?? null,
+        arm: row.arm ?? null,
         journeyStatus: row.journeyStatus ?? 'no_journey',
         strategy: row.strategy ?? 'unassigned',
         amountAtRiskPaise: row.amountAtRisk ?? row.failureAmount ?? fallbackFailure?.amount ?? 0,

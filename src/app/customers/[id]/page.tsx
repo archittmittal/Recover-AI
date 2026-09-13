@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   Terminal,
 } from 'lucide-react';
+import { formatPaise } from '@/lib/utils/money';
 
 interface CustomerProfile {
   id: string;
@@ -161,8 +162,8 @@ export default function CustomerDetailPage() {
 
   const { customer, failures, journey, auditLogs } = data;
   const primaryFailure = failures[0];
-  const atRiskRupees = ((journey?.amountAtRisk || primaryFailure?.amount || 0) / 100).toLocaleString('en-IN');
-  const recoveredRupees = ((journey?.amountRecovered || 0) / 100).toLocaleString('en-IN');
+  const atRiskLabel = formatPaise(journey?.amountAtRisk || primaryFailure?.amount || 0);
+  const recoveredLabel = formatPaise(journey?.amountRecovered || 0);
 
   return (
     <div className="min-h-screen bg-zinc-50/60 dark:bg-zinc-950 flex flex-col">
@@ -251,7 +252,7 @@ export default function CustomerDetailPage() {
               <div className="flex justify-between py-1 border-b border-zinc-100 dark:border-zinc-800">
                 <span className="text-zinc-500">Amount At Risk</span>
                 <span className="font-mono font-bold text-rose-600 dark:text-rose-400">
-                  ₹{atRiskRupees}
+                  {atRiskLabel}
                 </span>
               </div>
               <div className="flex justify-between py-1 border-b border-zinc-100 dark:border-zinc-800">
@@ -303,7 +304,7 @@ export default function CustomerDetailPage() {
               <div className="flex justify-between py-1 border-b border-zinc-100 dark:border-zinc-800">
                 <span className="text-zinc-500">Amount Recovered</span>
                 <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                  ₹{recoveredRupees}
+                  {recoveredLabel}
                 </span>
               </div>
               <div className="flex justify-between py-1">

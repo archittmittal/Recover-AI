@@ -182,17 +182,17 @@ export function BatchControls({ onActionComplete }: BatchControlsProps) {
   return (
     <Card className="border-zinc-200 dark:border-zinc-800 shadow-xs">
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <div>
             <CardTitle className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
-              Batch & Engine Simulation Controls
+              Batch controls
             </CardTitle>
             <CardDescription className="text-xs text-zinc-500">
               Seed synthetic data, trigger agent processing, or inject real-time Razorpay webhooks
             </CardDescription>
           </div>
-          <Badge variant="outline" className="text-[10px] uppercase font-semibold">
-            Interactive Testbed
+          <Badge variant="outline" className="text-[10px] font-semibold whitespace-nowrap shrink-0">
+            Testbed
           </Badge>
         </div>
       </CardHeader>
@@ -212,7 +212,7 @@ export function BatchControls({ onActionComplete }: BatchControlsProps) {
               <RotateCcw className="w-4 h-4 mr-2 text-zinc-600" />
             )}
             <div className="flex flex-col items-start text-left">
-              <span className="font-semibold">Seed 50+ Failures Batch</span>
+              <span className="font-semibold">Seed failure batch</span>
               <span className="text-[10px] text-zinc-500">Cards, UPI, Subscriptions & Invoices</span>
             </div>
           </Button>
@@ -228,7 +228,7 @@ export function BatchControls({ onActionComplete }: BatchControlsProps) {
               <Zap className="w-4 h-4 mr-2" />
             )}
             <div className="flex flex-col items-start text-left">
-              <span className="font-semibold">Run AI Recovery Agent</span>
+              <span className="font-semibold">Run recovery agent</span>
               <span className="text-[10px] text-indigo-100">Process queue & escalate channels</span>
             </div>
           </Button>
@@ -239,7 +239,7 @@ export function BatchControls({ onActionComplete }: BatchControlsProps) {
           <div className="flex items-center justify-between gap-2">
             <div className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
               <Clock className="w-3.5 h-3.5 text-zinc-500" />
-              Simulated Clock (IST)
+              Simulated clock (IST)
             </div>
             <span className="text-[11px] font-mono text-zinc-600 dark:text-zinc-400">
               {clockIso ? clockIso.replace('T', ' ').replace('+05:30', '') : '—'}
@@ -250,7 +250,7 @@ export function BatchControls({ onActionComplete }: BatchControlsProps) {
               )}
             </span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             {[
               { label: '+1 hour', body: { advanceMinutes: 60 } },
               { label: '+24 hours', body: { advanceMinutes: 60 * 24 } },
@@ -261,15 +261,15 @@ export function BatchControls({ onActionComplete }: BatchControlsProps) {
                 size="sm"
                 onClick={() => handleAdvanceClock(option.body, option.label)}
                 disabled={isAdvancing}
-                className="text-xs justify-start h-8"
+                className="text-xs justify-start h-8 min-w-0"
               >
-                <FastForward className="w-3.5 h-3.5 mr-1.5 text-zinc-600" />
-                {option.label}
+                <FastForward className="w-3.5 h-3.5 mr-1.5 shrink-0 text-zinc-600" />
+                <span className="truncate">{option.label}</span>
               </Button>
             ))}
             {[
-              { label: '21:00 (after hours)', hour: 21 },
-              { label: '09:00 (next morning)', hour: 9 },
+              { label: 'To 21:00', hour: 21, title: 'Jump to 21:00 IST — outside the contact window' },
+              { label: 'To 09:00', hour: 9, title: 'Jump to 09:00 IST next morning — inside the contact window' },
             ].map((option) => (
               <Button
                 key={option.label}
@@ -280,10 +280,11 @@ export function BatchControls({ onActionComplete }: BatchControlsProps) {
                   if (toIso) handleAdvanceClock({ toIso }, `to ${option.label}`);
                 }}
                 disabled={isAdvancing || !clockIso}
-                className="text-xs justify-start h-8"
+                title={option.title}
+                className="text-xs justify-start h-8 min-w-0"
               >
-                <Clock className="w-3.5 h-3.5 mr-1.5 text-zinc-600" />
-                {option.label}
+                <Clock className="w-3.5 h-3.5 mr-1.5 shrink-0 text-zinc-600" />
+                <span className="truncate">{option.label}</span>
               </Button>
             ))}
           </div>
@@ -296,7 +297,7 @@ export function BatchControls({ onActionComplete }: BatchControlsProps) {
         {/* Live Webhook Injection Buttons */}
         <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 space-y-2">
           <div className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-            Simulate a Signed Razorpay Webhook Delivery:
+            Inject a signed webhook
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <Button
