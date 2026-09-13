@@ -15,6 +15,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { JourneyStatusBadge } from './JourneyStatusBadge';
+import { ArmBadge } from './ArmBadge';
 import { AuditTimeline, AuditLogEntry } from './AuditTimeline';
 import {
   Search,
@@ -27,6 +28,7 @@ import {
   Filter,
 } from 'lucide-react';
 import { CustomerListItem } from '@/app/api/customers/route';
+import { formatPaise } from '@/lib/utils/money';
 
 interface CustomerTableProps {
   customers: CustomerListItem[];
@@ -112,10 +114,10 @@ export function CustomerTable({ customers }: CustomerTableProps) {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <CardTitle className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
-              Customer Recovery Records & Audit Trails
+              Recovery records
             </CardTitle>
             <CardDescription className="text-xs text-zinc-500">
-              Inspect state machine progression, channel attempts, and immutable logs per customer
+              One row per journey. Each customer is seeded into all three arms, so a name appears once per arm.
             </CardDescription>
           </div>
 
@@ -176,15 +178,15 @@ export function CustomerTable({ customers }: CustomerTableProps) {
           <div className="p-8 text-center border rounded-xl border-dashed border-zinc-300 dark:border-zinc-800">
             <Filter className="w-8 h-8 mx-auto text-zinc-400 mb-2" />
             <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-              No matching recovery records found
+              No matching records
             </div>
             <div className="text-xs text-zinc-500 mt-1">
-              Try adjusting your search query or seed a new 50+ batch from the top bar.
+              Adjust the search, or seed a new batch from the top bar.
             </div>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
+            <table className="w-full min-w-[920px] text-left text-xs border-collapse">
               <thead>
                 <tr className="border-b border-zinc-200 dark:border-zinc-800 text-zinc-500 font-semibold bg-zinc-50/50 dark:bg-zinc-900/50">
                   <th className="p-3 pl-4">Customer</th>
@@ -197,34 +199,37 @@ export function CustomerTable({ customers }: CustomerTableProps) {
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/80">
                 {filteredCustomers.map((cust) => {
-                  const atRiskRupees = (cust.amountAtRiskPaise / 100).toLocaleString('en-IN');
-                  const recoveredRupees = (cust.amountRecoveredPaise / 100).toLocaleString('en-IN');
+                  const atRiskLabel = formatPaise(cust.amountAtRiskPaise);
+                  const recoveredLabel = formatPaise(cust.amountRecoveredPaise);
 
                   return (
                     <tr
-                      key={cust.id}
+                      key={cust.journeyId ?? cust.id}
                       className="hover:bg-zinc-50/80 dark:hover:bg-zinc-900/50 transition-colors"
                     >
-                      <td className="p-3 pl-4">
+                      <td className="p-3 pl-4 align-top">
                         <div className="font-semibold text-zinc-900 dark:text-zinc-100">
                           {cust.name}
                         </div>
-                        <div className="text-[11px] text-zinc-500 font-mono">
+                        <div className="text-[11px] text-zinc-500 font-mono whitespace-nowrap">
                           {cust.phone} • {cust.preferredLanguage.toUpperCase()}
                         </div>
-                        <Badge
-                          variant="secondary"
-                          className="mt-1 text-[9px] font-medium py-0 px-1 uppercase"
-                        >
-                          {cust.segment}
-                        </Badge>
+                        <div className="mt-1 flex items-center gap-1">
+                          <Badge
+                            variant="secondary"
+                            className="text-[9px] font-medium py-0 px-1 uppercase"
+                          >
+                            {cust.segment}
+                          </Badge>
+                          {cust.arm && <ArmBadge arm={cust.arm} />}
+                        </div>
                       </td>
 
-                      <td className="p-3">
+                      <td className="p-3 align-top">
                         <div className="font-mono text-[11px] font-semibold text-zinc-800 dark:text-zinc-200">
                           {cust.errorReason}
                         </div>
-                        <div className="text-[11px] text-zinc-500 truncate max-w-[200px]">
+                        <div className="text-[11px] text-zinc-500 line-clamp-2 max-w-[220px]">
                           {cust.errorDescription}
                         </div>
                         <div className="text-[10px] text-zinc-400 capitalize mt-0.5">
@@ -232,11 +237,11 @@ export function CustomerTable({ customers }: CustomerTableProps) {
                         </div>
                       </td>
 
-                      <td className="p-3">
+                      <td className="p-3 align-top">
                         <div className="font-medium text-zinc-800 dark:text-zinc-200">
                           {cust.strategy.replace(/_/g, ' ')}
                         </div>
-                        <div className="text-[11px] text-zinc-500 mt-0.5 flex items-center">
+                        <div className="text-[11px] text-zinc-500 mt-0.5 flex items-center whitespace-nowrap">
                           {getChannelIcon(cust.currentChannel)}
                           <span className="capitalize">{cust.currentChannel || 'None'}</span>
                           <span className="ml-1 text-zinc-400 font-mono">
@@ -245,16 +250,16 @@ export function CustomerTable({ customers }: CustomerTableProps) {
                         </div>
                       </td>
 
-                      <td className="p-3">
+                      <td className="p-3 align-top">
                         <JourneyStatusBadge status={cust.journeyStatus} />
                         {cust.dndStatus === 'opted_out' && (
                           <div className="text-[10px] text-zinc-500 mt-1">DND: Opted Out</div>
                         )}
                       </td>
 
-                      <td className="p-3">
+                      <td className="p-3 align-top whitespace-nowrap">
                         <div className="font-mono font-semibold text-zinc-900 dark:text-zinc-100">
-                          ₹{atRiskRupees}
+                          {atRiskLabel}
                         </div>
                         <div
                           className={`text-[11px] font-mono font-medium ${
@@ -263,11 +268,11 @@ export function CustomerTable({ customers }: CustomerTableProps) {
                               : 'text-zinc-400'
                           }`}
                         >
-                          Recovered: ₹{recoveredRupees}
+                          Recovered: {recoveredLabel}
                         </div>
                       </td>
 
-                      <td className="p-3 pr-4 text-right space-x-2">
+                      <td className="p-3 pr-4 text-right align-top whitespace-nowrap space-x-2">
                         <Button
                           variant="outline"
                           size="sm"
@@ -311,7 +316,7 @@ export function CustomerTable({ customers }: CustomerTableProps) {
           <DialogHeader>
             <DialogTitle className="text-base font-bold flex items-center justify-between">
               <span>
-                Recovery Audit Trail —{' '}
+                Audit trail —{' '}
                 <span className="text-indigo-600 dark:text-indigo-400">
                   {selectedCustomerData?.customer?.name || 'Customer'}
                 </span>
@@ -321,8 +326,7 @@ export function CustomerTable({ customers }: CustomerTableProps) {
               </span>
             </DialogTitle>
             <DialogDescription className="text-xs text-zinc-500">
-              Immutable ledger of webhook receipts, AI diagnosis reasoning, dispatched messages,
-              and customer responses.
+              Webhook receipts, diagnosis reasoning, dispatched messages and customer responses.
             </DialogDescription>
           </DialogHeader>
 
