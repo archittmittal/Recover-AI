@@ -2,6 +2,7 @@ import { gemini } from './gemini';
 import { CONVERSATIONAL_REPLY_SYSTEM_PROMPT } from './prompts';
 import { detectOptOut } from '../recovery/stopping-rules';
 import { sanitizePromptInput } from './sanitize';
+import { formatPaise } from '../utils/money';
 
 export interface ConversationInput {
   customerName: string;
@@ -37,7 +38,7 @@ export async function processCustomerConversation(
   }
 
   const model = gemini.getModel();
-  const rupeeAmount = `₹${(input.amount / 100).toLocaleString('en-IN')}`;
+  const rupeeAmount = formatPaise(input.amount);
 
   // 2. Default fallback response if LLM is offline
   const fallbackResponse: ConversationResponse = {

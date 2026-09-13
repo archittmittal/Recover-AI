@@ -2,6 +2,7 @@ import { gemini } from './gemini';
 import { getGeminiModel } from '../config';
 import { MESSAGE_GENERATION_SYSTEM_PROMPT } from './prompts';
 import { sanitizePromptInput } from './sanitize';
+import { formatPaise } from '../utils/money';
 
 export interface MessageGenerationParams {
   customerName: string;
@@ -24,7 +25,7 @@ export interface GeneratedMessageResult {
  * Deterministic template fallback messages ensuring 100% reliability if LLM is unavailable.
  */
 export function getTemplateFallbackMessage(params: MessageGenerationParams): string {
-  const rupeeAmount = `₹${(params.amount / 100).toLocaleString('en-IN')}`;
+  const rupeeAmount = formatPaise(params.amount);
   const name = params.customerName.split(' ')[0] || 'there';
 
   if (params.channel === 'sms') {
@@ -36,14 +37,14 @@ export function getTemplateFallbackMessage(params: MessageGenerationParams): str
 
   // WhatsApp template
   if (params.language === 'hinglish') {
-    return `Namaste ${name}! 🙏\n\nAapka ${rupeeAmount} ka transaction complete nahi ho saka. Chinta na karein, aap niche diye gaye link se UPI ya card dwara payment poora kar sakte hain:\n👉 ${params.paymentLinkUrl}\n\nKisi bhi madad ke liye yahan reply karein.\nReply STOP to unsubscribe.`;
+    return `Namaste ${name},\n\nAapka ${rupeeAmount} ka transaction complete nahi ho saka. Aap niche diye gaye link se UPI ya card dwara payment poora kar sakte hain:\n${params.paymentLinkUrl}\n\nKisi bhi madad ke liye yahan reply karein.\nReply STOP to unsubscribe.`;
   }
 
   if (params.language === 'hi') {
-    return `नमस्ते ${name}! 🙏\n\nआपका ${rupeeAmount} का भुगतान अधूरा रह गया। आप नीचे दिए गए सुरक्षित लिंक से भुगतान पूरा कर सकते हैं:\n👉 ${params.paymentLinkUrl}\n\nकिसी भी सहायता के लिए उत्तर दें।\nReply STOP to unsubscribe.`;
+    return `नमस्ते ${name},\n\nआपका ${rupeeAmount} का भुगतान अधूरा रह गया। आप नीचे दिए गए सुरक्षित लिंक से भुगतान पूरा कर सकते हैं:\n${params.paymentLinkUrl}\n\nकिसी भी सहायता के लिए उत्तर दें।\nReply STOP to unsubscribe.`;
   }
 
-  return `Hello ${name}! 👋\n\nWe noticed your recent payment of ${rupeeAmount} didn't go through. You can easily complete your payment using this secure link:\n👉 ${params.paymentLinkUrl}\n\nFeel free to reply if you need any assistance!\nReply STOP to unsubscribe.`;
+  return `Hello ${name},\n\nWe noticed your recent payment of ${rupeeAmount} didn't go through. You can complete it using this secure link:\n${params.paymentLinkUrl}\n\nReply here if you need any assistance.\nReply STOP to unsubscribe.`;
 }
 
 /**
@@ -97,7 +98,7 @@ export async function generateRecoveryMessage(
   }
 
   try {
-    const rupeeAmount = `₹${(params.amount / 100).toLocaleString('en-IN')}`;
+    const rupeeAmount = formatPaise(params.amount);
     const userPrompt = `
 Generate a ${params.channel.toUpperCase()} message for:
 - Customer Name: "${params.customerName}"

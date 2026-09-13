@@ -4,6 +4,7 @@ import { recoveryJourneys } from '@/lib/db/schema';
 import { and, desc, eq, ne } from 'drizzle-orm';
 import { recoveryCoordinator } from '@/lib/recovery/coordinator';
 import { generateId } from '@/lib/utils/ids';
+import { formatPaise } from '@/lib/utils/money';
 
 export const dynamic = 'force-dynamic';
 
@@ -74,7 +75,7 @@ export async function POST(req: NextRequest) {
         paymentId: payId,
         amountRecovered: amountToRecover,
         status: 'resolved',
-        message: `Successfully recovered ₹${(amountToRecover / 100).toLocaleString('en-IN')}`,
+        message: `Successfully recovered ${formatPaise(amountToRecover)}`,
       },
     });
   } catch (error: unknown) {
