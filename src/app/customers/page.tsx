@@ -64,16 +64,16 @@ export default function CustomersPage() {
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-zinc-200/80 dark:border-zinc-800">
-          <div>
+          <div className="min-w-0">
             <h1 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-              Customer Recovery Directory & Audit Ledger
+              Customers & audit
             </h1>
             <p className="text-xs text-zinc-500 mt-0.5">
-              Comprehensive list of all customers, active journeys, communication logs, and honest exception records.
+              Every journey, its channel attempts, and the audit trail behind each decision.
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <Button
               variant="outline"
               size="sm"

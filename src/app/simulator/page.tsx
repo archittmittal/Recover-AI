@@ -113,17 +113,17 @@ function SimulatorContent() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {/* Top Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-zinc-200/80 dark:border-zinc-800">
-          <div>
+          <div className="min-w-0">
             <h1 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-              RecoverAI Interactive Simulation Sandbox
+              Simulator
             </h1>
             <p className="text-xs text-zinc-500 mt-0.5">
-              Live interactive testing environment. Evaluate compliance escalation, stopping rules
-              (STOP/Payment), and AI conversational responses.
+              Drive the agent by hand: seed a batch, move the clock, inject a signed webhook, or
+              reply as a customer to exercise the stopping rules.
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <Button
               variant="outline"
               size="sm"
@@ -140,7 +140,7 @@ function SimulatorContent() {
         {isLoading ? (
           <div className="p-16 flex flex-col items-center justify-center gap-3 text-zinc-500">
             <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-            <span className="text-sm font-medium">Initializing simulation sandbox...</span>
+            <span className="text-sm font-medium">Loading simulator...</span>
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -153,13 +153,13 @@ function SimulatorContent() {
               <Card className="border-zinc-200 dark:border-zinc-800 shadow-xs">
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between gap-2">
-                    <CardTitle className="text-sm font-semibold">Select Customer to Simulate</CardTitle>
+                    <CardTitle className="text-sm font-semibold">Select a customer</CardTitle>
                     <span className="text-xs font-mono text-zinc-500">{filteredCustomers.length} total</span>
                   </div>
                   <div className="relative mt-2">
                     <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-zinc-400" />
                     <Input
-                      placeholder="Filter by customer name, phone, error..."
+                      placeholder="Filter by name, phone or error"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="pl-8 h-8 text-xs"

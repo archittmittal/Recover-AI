@@ -128,17 +128,17 @@ export default function DashboardPage() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {/* Top Header Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-zinc-200/80 dark:border-zinc-800">
-          <div>
+          <div className="min-w-0">
             <h1 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-              Executive Revenue Recovery Command Center
+              Recovery overview
             </h1>
             <p className="text-xs text-zinc-500 mt-0.5">
-              Razorpay autonomous dunning, multi-channel failover, and RBI contact-hours
-              compliance monitoring, over a synthetic batch.
+              Autonomous dunning, channel escalation and contact-hours enforcement, measured
+              over a synthetic batch against a rules-only baseline.
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <Button
               variant="outline"
               size="sm"
@@ -147,7 +147,7 @@ export default function DashboardPage() {
               className="text-xs font-medium border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100"
             >
               <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-              Refresh Analytics
+              Refresh
             </Button>
           </div>
         </div>
@@ -162,11 +162,11 @@ export default function DashboardPage() {
             </div>
             <div className="space-y-1">
               <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">
-                Welcome to RecoverAI
+                No batch seeded yet
               </h2>
               <p className="text-xs text-zinc-500">
-                Autonomous Revenue Recovery Agent for Razorpay Buildathon 2026. Seed synthetic
-                payment failures to observe the agent in action.
+                Seed a synthetic batch of payment failures to run the agent across all three
+                evaluation arms.
               </p>
             </div>
 
@@ -178,12 +178,12 @@ export default function DashboardPage() {
               {isSeeding ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Generating 50+ Synthetic Failures...
+                  Seeding batch...
                 </>
               ) : (
                 <>
                   <RotateCcw className="w-4 h-4 mr-2" />
-                  Seed 50+ Failures Batch
+                  Seed failure batch
                 </>
               )}
             </Button>
