@@ -35,19 +35,19 @@ export function FailureBreakdown({ strategyMetrics }: FailureBreakdownProps) {
         <div className="flex items-center justify-between">
           <div>
             <CardTitle className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
-              Recovery Strategy Distribution
+              Strategy distribution
             </CardTitle>
             <CardDescription className="text-xs text-zinc-500">
-              Deterministic routing & LLM root-cause classification
+              Deterministic routing, with LLM classification on ambiguous causes
             </CardDescription>
           </div>
           <span className="text-xs text-zinc-500 font-mono">
-            {totalCount} Total Journeys
+            {totalCount} journeys
           </span>
         </div>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-center">
           {/* Donut Chart */}
           <div className="h-[200px] w-full flex items-center justify-center">
             <ResponsiveContainer width="100%" height="100%">
@@ -83,19 +83,19 @@ export function FailureBreakdown({ strategyMetrics }: FailureBreakdownProps) {
           {/* Strategy Legend & Rates */}
           <div className="space-y-2.5">
             {chartData.map((item, idx) => (
-              <div key={idx} className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
+              <div key={idx} className="flex items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2 min-w-0">
                   <span
                     className="w-2.5 h-2.5 rounded-full shrink-0"
                     style={{ backgroundColor: item.color }}
                   />
-                  <span className="text-zinc-700 dark:text-zinc-300 font-medium truncate max-w-[160px]">
+                  <span className="text-zinc-700 dark:text-zinc-300 font-medium truncate" title={item.name}>
                     {item.name}
                   </span>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-zinc-500">{item.value} txns</span>
-                  <span className="font-semibold text-zinc-900 dark:text-zinc-100 min-w-[36px] text-right">
+                <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
+                  <span className="text-zinc-500 tabular-nums">{item.value}</span>
+                  <span className="font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums min-w-[38px] text-right">
                     {item.rate}%
                   </span>
                 </div>
