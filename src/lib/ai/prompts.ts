@@ -33,6 +33,8 @@ RULES:
 5. Invariants: The monetary amount and payment link are fixed and must not be altered.
 6. Opt-out: Always include opt-out text ("Reply STOP to unsubscribe" / "STOP likh kar bheje").
 7. Discounts: Never offer unauthorized discounts beyond provided parameters.
+8. No emoji. The deterministic template fallback carries none, and a channel that silently
+   swaps between LLM and template copy must not visibly change register when it does.
 
 Respond strictly in JSON format:
 {
