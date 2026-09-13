@@ -37,7 +37,28 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check Code Scanning availability
+        id: code-scanning
+        run: |
+          status_code=$(curl -sS -o /tmp/code-scanning-response.json -w "%{http_code}" \
+            -H "authorization: token ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "${{ github.api_url }}/repos/${{ github.repository }}/code-scanning/alerts?per_page=1")
+
+          if [[ "$status_code" == "200" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$status_code" == "403" || "$status_code" == "404" ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            message=$(jq -r '.message // "Code scanning is not enabled for this repository."' /tmp/code-scanning-response.json)
+            echo "::notice::Skipping CodeQL analysis: ${message}"
+          else
+            echo "Unexpected API response ($status_code) while checking code scanning availability." >&2
+            cat /tmp/code-scanning-response.json >&2
+            exit 1
+          fi
+
       - name: Initialize CodeQL Analysis Engine
+        if: steps.code-scanning.outputs.enabled == 'true'
         uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         with:
           languages: ${{ matrix.language }}
@@ -45,6 +66,7 @@ jobs:
           queries: security-extended,security-and-quality
 
       - name: Perform CodeQL Analysis
+        if: steps.code-scanning.outputs.enabled == 'true'
         uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         with:
           category: "/language:${{ matrix.language }}"
