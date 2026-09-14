@@ -4,8 +4,16 @@ import { paymentFailures, recoveryJourneys } from '@/lib/db/schema';
 import { recoveryCoordinator } from '@/lib/recovery/coordinator';
 import { getSimulationSeed, shouldSimulateOutcomes } from '@/lib/config';
 import { runSimulatedOutcomes } from '@/lib/simulation/outcomes';
+import { getRecoveryConcurrency, mapWithConcurrency } from '@/lib/utils/concurrency';
 
 export const dynamic = 'force-dynamic';
+
+/**
+ * The batch is the slowest thing this app does, and the platform default is not generous enough
+ * for it. Declared here rather than left to chance, so a slow run is cut off by a number that is
+ * written down instead of by whatever the host happens to allow.
+ */
+export const maxDuration = 300;
 
 export async function POST() {
   try {
@@ -13,21 +21,41 @@ export async function POST() {
     const allFailures = await db.select().from(paymentFailures);
     const existingJourneys = await db.select().from(recoveryJourneys);
 
-    const processedJourneyIds: string[] = [];
+    // Index the journeys once. `find` inside the loop made this quadratic — 150 failures against
+    // 150 journeys is 22,500 comparisons to answer a question a map answers in one.
+    const journeyByFailureId = new Map(existingJourneys.map((j) => [j.failureId, j]));
 
-    for (const failure of allFailures) {
-      const existing = existingJourneys.find((j) => j.failureId === failure.id);
+    // Journeys are independent of one another, so the sequential loop this replaced spent almost
+    // all of its time waiting on round trips it could have overlapped. Measured on the deployed
+    // demo: 266s for 150 journeys, with no LLM call in any of them.
+    //
+    // Bounded, not unbounded: `Promise.all` over the whole batch would open 150 concurrent
+    // database connections and fan out just as wide to Gemini, which rejects bursts (13 of 15
+    // concurrent calls came back 429). The width is a declared number, not an accident.
+    //
+    // Determinism is unaffected. `decideOutcomes` sorts its own input before drawing, so the
+    // order journeys happen to finish in cannot move a single outcome — asserted by
+    // tests/simulation-batch-determinism.test.ts.
+    const outcomes = await mapWithConcurrency(
+      allFailures,
+      getRecoveryConcurrency(),
+      async (failure) => {
+        const existing = journeyByFailureId.get(failure.id);
 
-      if (!existing) {
-        // Start new journey
-        const jId = await recoveryCoordinator.startRecoveryJourney(failure.id);
-        processedJourneyIds.push(jId);
-      } else if (existing.status === 'recovering' || existing.status === 'detected') {
-        // Continue existing journey attempt
-        await recoveryCoordinator.processRecoveryAttempt(existing.id);
-        processedJourneyIds.push(existing.id);
+        if (!existing) {
+          return recoveryCoordinator.startRecoveryJourney(failure.id);
+        }
+
+        if (existing.status === 'recovering' || existing.status === 'detected') {
+          await recoveryCoordinator.processRecoveryAttempt(existing.id);
+          return existing.id;
+        }
+
+        return null;
       }
-    }
+    );
+
+    const processedJourneyIds = outcomes.filter((id): id is string => id !== null);
 
     // 2. Ask the declared response model which of those outreach attempts converted (RA-23).
     //
