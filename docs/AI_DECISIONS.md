@@ -25,7 +25,7 @@ graph TD
 ```
 
 ### A. Contextual, Multi-Lingual Message Generation
-- **Problem**: Standard recovery emails ("Your payment failed, click here") have an average conversion rate of <15%. Customers ignore generic dunning.
+- **Problem**: Generic dunning copy ("Your payment failed, click here") is ignored, and it reads identically whether the card was declined or the gateway timed out.
 - **AI Solution**: Gemini generates empathetic, concise WhatsApp and SMS messages in the customer's preferred language (**English, Hindi, or Hinglish**).
 - **Context Provided to LLM**:
   - Customer First Name

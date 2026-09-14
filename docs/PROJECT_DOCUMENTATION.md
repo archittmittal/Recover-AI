@@ -102,7 +102,7 @@ Involuntary churn — where paying subscribers lose access due to payment failur
 
 **Universal gaps across all tools:**
 1. Gateway retries isolated from ERP/accounting systems
-2. Global tools rely on email (15–25% open rate) vs WhatsApp (90–98% open rate in India)
+2. Global tools rely on email, where India's engagement is concentrated on WhatsApp instead
 3. No dynamic alternative payment method routing (e.g., failed card → instant UPI payment link via WhatsApp)
 
 ---
@@ -160,83 +160,295 @@ RecoverAI is a **full-stack autonomous agent** that closes the loop from failure
 
 ```mermaid
 graph TB
-    subgraph "Data Sources"
-        WH["Razorpay Webhooks<br/>(Simulated)"]
-        SIM["Batch Simulator<br/>(50+ Synthetic Records)"]
+    subgraph ext["External services"]
+        RZP["Razorpay<br/>test mode"]
+        GEM["Google Gemini<br/>gemini-3.6-flash"]
     end
 
-    subgraph "RecoverAI Backend"
-        ING["Webhook Ingestion<br/>API Route"]
-        RC["Recovery Coordinator<br/>(State Machine)"]
-        LLM["LLM Agent Engine<br/>(Gemini API)"]
-        SCH["Retry Scheduler<br/>(Cron Jobs)"]
-        COM["Communication<br/>Manager"]
-        AUD["Audit Logger"]
+    subgraph edge["Entry points — all behind src/proxy.ts"]
+        WHK["POST /api/webhooks/razorpay<br/>signature verified, then acknowledged"]
+        TRG["POST /api/recovery/trigger<br/>batch run"]
+        SWP["POST /api/recovery/sweep<br/>abandonment + reconciliation"]
+        SIMR["/api/simulator/*<br/>demo builds only"]
     end
 
-    subgraph "Data Layer"
-        DB["SQLite Database"]
+    subgraph agent["Agent"]
+        CLS["Classifier<br/>deterministic first"]
+        STR["STRATEGY_CONFIGS<br/>channels, cap, backoff"]
+        RC["Recovery Coordinator<br/>state machine"]
+        SR["Stopping rules<br/>pure, no I/O"]
+        COM["Communication Manager<br/>dispatch simulated"]
+        AUD["Audit logger"]
     end
 
-    subgraph "Frontend Dashboard"
-        MET["Metrics Board"]
-        CUS["Customer Recovery View"]
-        TIM["Audit Timeline"]
-        CSIM["Customer Simulator"]
+    subgraph model["Response model — arm's length"]
+        RM["Declared coefficients<br/>seeded RNG"]
     end
 
-    WH -->|POST /api/webhooks/razorpay| ING
-    SIM -->|Seed data| DB
-    ING --> RC
-    RC -->|Classify failure| LLM
-    RC -->|Schedule retry| SCH
-    RC -->|Send message| COM
-    RC -->|Log every action| AUD
-    AUD --> DB
+    DB[("SQLite / libSQL<br/>6 tables")]
+    UI["Dashboard<br/>metrics · audit · simulator"]
+
+    RZP -->|signed delivery| WHK
+    WHK --> RC
+    TRG --> RC
+    SWP --> RC
+    SIMR -.->|signs a real delivery| WHK
+
+    RC --> CLS
+    CLS -.->|only when confidence < 0.95| GEM
+    CLS --> STR
+    STR --> RC
+    RC --> SR
+    SR -->|allowed| COM
+    SR -.->|blocked, with reason| AUD
+    COM -.->|message copy| GEM
+    RC -->|payment link| RZP
+    RC --> AUD
     RC --> DB
-    SCH -->|Trigger retry| RC
-    COM -->|Simulate delivery| CSIM
-    DB --> MET
-    DB --> CUS
-    DB --> TIM
+    AUD --> DB
+    DB --> UI
+
+    TRG -.->|composed in the route, never imported| RM
+    RM -.->|drawn outcomes| RC
+
+    classDef llm fill:#EEF0FE,stroke:#4338CA,color:#1E1B4B
+    classDef det fill:#F4F6F8,stroke:#64748B,color:#16181D
+    class GEM llm
+    class CLS,SR,STR det
 ```
 
-### 4.2 Component Breakdown
+**Reading the diagram.** Dotted edges are conditional or deliberately indirect. Three are worth
+naming:
 
-#### 4.2.1 Webhook Ingestion Layer
-- **Endpoint:** `POST /api/webhooks/razorpay`
-- Validates `x-razorpay-signature` via HMAC-SHA256
-- Parses event type and routes to Recovery Coordinator
-- Idempotent processing using `event_id` deduplication
+- `CLS -.-> GEM` fires only when the deterministic classifier returns confidence below 0.95.
+  On the seeded batch that is a small minority of failures; the common path never calls a model.
+- `SR -.-> AUD` is the path taken when a stopping rule *blocks* an action. A refusal is recorded
+  as deliberately as a dispatch, which is what makes a deferral legible instead of a silent gap.
+- `TRG -.-> RM` is drawn as a route-level composition rather than a call from the agent, because
+  no file under `src/lib/recovery/` may import the response model and no file under
+  `src/lib/simulation/` may import the agent. Tests assert both directions. If the agent could
+  reach the model that decides who pays, it would be marking its own homework.
 
-#### 4.2.2 Recovery Coordinator (State Machine)
-- Central orchestrator that manages customer recovery journeys
-- Maintains per-customer state: `detected → diagnosing → recovering → escalating → resolved | exhausted | opted_out`
-- Enforces stopping rules and attempt limits
-- Delegates to LLM for strategy selection and message generation
+**What is deliberately absent.** There is no scheduler process, no queue and no worker pool.
+`/api/recovery/trigger` and `/api/recovery/sweep` are HTTP-triggered and run the batch inline,
+bounded by `RECOVERY_CONCURRENCY`. The sweep accepts a cron secret so an external scheduler can
+drive it, but this repository configures no cron. That is a real scale limit, stated here rather
+than implied away by drawing a box labelled "Scheduler".
 
-#### 4.2.3 LLM Agent Engine
-- Uses Google Gemini API for:
-  - Failure root-cause classification when Razorpay error fields are ambiguous
-  - Generating personalized, empathetic recovery messages (English + Hinglish)
-  - Selecting optimal recovery strategy based on customer profile and failure history
-  - Conversational responses when simulated customers reply
+**Mode boundary.** `RECOVERAI_MODE` decides whether the two external services are reached at all.
+In `mock` no credential is handed out even if one is configured, so payment links are fabricated
+and template copy ships — running in mock means running no AI. The mode is declared, never
+inferred from whether a credential looks real.
 
-#### 4.2.4 Retry Scheduler
-- Time-based retry logic for transient failures
-- Configurable cadence: attempt at T+1h, T+24h, T+72h (aligned with Razorpay's own retry windows)
-- Respects RBI-mandated contact hours (8 AM – 7 PM IST)
+### 4.2 Where the decision boundary sits
 
-#### 4.2.5 Communication Manager
-- Orchestrates multi-channel message dispatch (simulated)
-- Channel priority: WhatsApp (90–98% open rate) → SMS (28–40%) → Email (15–25%)
-- Generates Razorpay Payment Links via API for each recovery attempt
-- Tracks delivery status and customer responses
+The single most consequential design choice in the project is which side of this line each
+decision falls on.
 
-#### 4.2.6 Audit Logger
-- Immutable, append-only log of every system event
-- Records: timestamp, actor (system/customer), action, payload, outcome
-- Powers the timeline view in the dashboard
+```mermaid
+graph LR
+    F["Payment failure"] --> Q{"Is the problem<br/>language or ambiguity?"}
+
+    Q -->|No — correctness,<br/>money, or the law| D["Deterministic code"]
+    Q -->|Yes| L["Gemini"]
+
+    D --> D1["Stopping rules"]
+    D --> D2["Contact-hours window"]
+    D --> D3["Monetary amounts"]
+    D --> D4["Common classification"]
+    D --> D5["Retry cadence"]
+    D --> D6["Metrics"]
+
+    L --> L1["Message copy"]
+    L --> L2["Ambiguous classification"]
+    L --> L3["Free-text reply intent"]
+
+    L1 -.->|validated, else| T["Deterministic template"]
+    L2 -.->|on failure| D4
+    L3 -.->|opt-out re-checked in code| D1
+
+    classDef llm fill:#EEF0FE,stroke:#4338CA,color:#1E1B4B
+    classDef det fill:#F4F6F8,stroke:#64748B,color:#16181D
+    class L,L1,L2,L3 llm
+    class D,D1,D2,D3,D4,D5,D6,T det
+```
+
+Every LLM output has a deterministic path back. A model that honours an opt-out 99% of the time
+is a compliance incident the other 1%, so opt-out detection is re-run in code on every reply
+regardless of what the model concluded — `detectOptOut` is the single source of truth, shared by
+the conversational agent and the rule engine so the two cannot drift apart (RA-08, RA-11).
+
+The LLM also cannot move money or override a stop. Those are not permissions it is trusted with
+and declines to use; they are code paths it has no ability to reach.
+
+### 4.3 One recovery, end to end
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant R as Razorpay
+    participant W as Webhook route
+    participant C as Coordinator
+    participant K as Classifier
+    participant G as Gemini
+    participant S as Stopping rules
+    participant D as Database
+
+    R->>W: payment.failed (signed)
+    W->>W: verify HMAC-SHA256, constant time
+    W->>D: claim event id (insert-or-conflict)
+    W-->>R: 200 — acknowledge before working
+    W->>C: process claimed event
+
+    C->>K: error_source / error_step / error_reason
+    K-->>C: payment_link, confidence 1.0
+    Note over K,G: Gemini is not called —<br/>confidence is above 0.95
+
+    C->>S: may we dispatch?
+    S-->>C: no — 21:04 IST is outside 08:00–19:00
+    C->>D: audit: stopping_rule_triggered
+
+    Note over C: next run, inside the window
+    C->>S: may we dispatch?
+    S-->>C: yes
+    C->>R: create payment link (ref recov_<journey>_att1)
+    C->>G: write the message
+    G-->>C: copy (amount + link preserved, validated)
+    C->>D: recovery_action, attempt 1, WhatsApp
+
+    R->>W: payment_link.paid (signed)
+    W->>C: resolve by stamped reference
+    C->>D: journey resolved, credited to attempt 1
+```
+
+Two details in that sequence are load-bearing. The acknowledgement is sent **before** the agent's
+work, because a webhook sender must not wait on downstream processing; the trade is that a later
+failure cannot be signalled back to Razorpay, which is why `/api/recovery/sweep` reconciles
+deliveries whose processing never finished. And the payment link carries
+`recov_<journeyId>_att<n>` from creation, so attribution is a fact rather than a guess — a
+payment arriving with neither that reference nor a known link id is recorded and credited to
+nothing.
+
+### 4.4 How the result is measured
+
+```mermaid
+graph LR
+    SEED["One seeded batch<br/>50 failures"] --> A["Arm A<br/>no agent"]
+    SEED --> B["Arm B<br/>rules_only"]
+    SEED --> C["Arm C<br/>full agent"]
+
+    A --> RA["0.0%"]
+    B --> RB["35.1%"]
+    C --> RC["37.9%"]
+
+    RB --> DELTA["C − B = +2.82 pts<br/>se 0.80 · t 3.5 · n 25"]
+    RC --> DELTA
+
+    classDef arm fill:#F4F6F8,stroke:#64748B,color:#16181D
+    classDef res fill:#EEF0FE,stroke:#4338CA,color:#1E1B4B
+    class A,B,C arm
+    class DELTA res
+```
+
+The same 50 failures are materialised into all three arms, and the response model draws on a
+cohort-invariant `simulationKey` rather than the row id — so arm B and arm C see the *same*
+uniform draw for the same customer. The arms differ by the coefficients the agent earned, not by
+which arm got luckier. At n=50 per arm, independent draws would swamp the effect entirely.
+
+Arm B is not a hand-written constant; it runs the identical execution path as arm C with a
+different `STRATEGY_CONFIGS` entry, which is what stops the baseline quietly diverging from the
+product it exists to be compared against (RA-22).
+
+### 4.5 How a merchant would integrate it
+
+```mermaid
+graph LR
+    subgraph m["Merchant — unchanged"]
+        CO["Existing checkout"]
+    end
+
+    subgraph r["Razorpay"]
+        PAY["Payments"]
+        HOOK["Webhook config"]
+        LINK["Payment Links API"]
+    end
+
+    subgraph ra["RecoverAI"]
+        AG["Agent + stopping rules"]
+    end
+
+    CO --> PAY
+    PAY -->|payment.failed| HOOK
+    HOOK -->|signed delivery| AG
+    AG -->|create link| LINK
+    LINK -->|link url| AG
+    AG -->|outreach| CUST["Customer"]
+    CUST -->|pays| LINK
+    LINK -->|payment_link.paid| HOOK
+```
+
+**No merchant code changes.** Integration is a webhook subscription and API credentials; the
+checkout is untouched. That is deliberate — anything requiring a change to the payment page
+raises the cost of adoption above the value of the recovery. The compliance logic, the stopping
+rules and the audit trail belong to RecoverAI, so a merchant inherits them rather than
+reimplementing them.
+
+### 4.6 Component breakdown
+
+#### 4.6.1 Proxy (`src/proxy.ts`)
+- One authentication gate in front of every route (RA-05)
+- Session cookie for dashboard routes; shared secret for the sweep, failing **closed** when unset
+- The Razorpay webhook is exempt — it authenticates by signature instead
+- Lives in `proxy.ts`, not `middleware.ts`: the middleware convention is deprecated in Next.js 16
+
+#### 4.6.2 Webhook ingestion
+- `POST /api/webhooks/razorpay`
+- HMAC-SHA256 over the raw body, compared in constant time; missing secret answers 503, bad
+  signature 400 — it never fails open (RA-01)
+- Deduplicated on the `x-razorpay-event-id` **header**, claimed with an atomic
+  insert-or-conflict so two concurrent deliveries cannot both proceed. The body carries no
+  top-level id, so the earlier body-field check never matched anything (RA-04)
+- Acknowledges before processing; the work runs in `after()`
+
+#### 4.6.3 Classifier
+- Deterministic lookup over Razorpay's error taxonomy, returning a strategy **and a confidence**
+- `gateway`, `network`, `issuer_bank`, `customer_psp`, `beneficiary_bank` → `smart_retry`:
+  infrastructure failed, the customer did nothing wrong, so retry without disturbing them
+- `business`, `internal` → `merchant_alert`: the customer cannot fix a merchant misconfiguration
+- An unrecognised source returns `null` rather than a guess, and the failure goes to the
+  exception list
+- Only a sub-0.95 confidence reaches Gemini
+
+#### 4.6.4 Recovery Coordinator
+- The state machine: `detected → diagnosing → recovering`, terminating in `resolved`,
+  `opted_out`, `exhausted` or `uncontactable`
+- Enforces the strategy's backoff by comparing `scheduledAt` against the clock, so a caller that
+  invokes it repeatedly cannot burn a journey's whole attempt ladder in seconds (RA-07)
+- Arm A cannot dispatch regardless of caller, by construction
+
+#### 4.6.5 Strategy configuration
+- `STRATEGY_CONFIGS` maps a strategy to its channel sequence, attempt cap and retry intervals
+- Adding a recovery behaviour is a new entry, not a new branch — which is what lets the
+  experiment arms share the product's execution path exactly
+
+#### 4.6.6 Stopping rules
+- Pure function, no I/O and no model: payment success, opt-out, DND, attempt exhaustion,
+  contact-hours window
+- Evaluated before *every* dispatch, and every firing is written to the audit log — including
+  the contact-hours rule, whose status label does not change, so gating the log on a status
+  change silently dropped exactly the record that mattered most (RA-06)
+
+#### 4.6.7 Communication Manager
+- Per-channel dispatch behind one interface: WhatsApp, SMS, voice, email
+- **Delivery is simulated.** There is no WhatsApp Business API, SMS gateway or voice provider
+  behind this; swapping one in is an adapter, not a redesign
+- Delivery status is recorded from the dispatch result rather than asserted (RA-12)
+
+#### 4.6.8 Audit logger
+- Append-only. Records timestamp, actor, event type and payload for every decision, including
+  ones that produced no action
+- Powers the per-customer timeline, and is the evidence behind every explainability claim in
+  this document
 
 ---
 
@@ -452,7 +664,7 @@ The agent **immediately halts** outreach when any of these conditions are met:
 
 | Attempt | Channel | Justification |
 | :--- | :--- | :--- |
-| 1 | **WhatsApp** | 90–98% open rate, 20–60% CTR, rich interactive buttons |
+| 1 | **WhatsApp** | Dominant messaging channel in India; carries the payment link and accepts a reply |
 | 2 | **SMS** | Universal reach (no internet needed), bypasses DND for service-implicit messages |
 | 3 | **Voice (simulated)** | Highest urgency signal, Hinglish conversational recovery |
 
@@ -1256,6 +1468,6 @@ Step 2 exists because a recovery rate without a baseline is not a measurement.
 - Chargebee: 50–70% failed payment recovery rate
 - Recurly Intelligent Retries: 53% → 71% recovery improvement
 - Stripe Smart Retries: 25–55% recovery rate
-- WhatsApp Business: 90–98% open rate (India)
+- WhatsApp Business: the default messaging channel in the Indian market
 - Median industry recovery rate: 47.6%
 - Top-quartile recovery rate: 70–85%
