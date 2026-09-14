@@ -51,6 +51,159 @@ Every step writes to an immutable audit log, so any decision the agent makes —
 
 ---
 
+## Architecture
+
+```mermaid
+graph TB
+    subgraph ext["External services"]
+        RZP["Razorpay<br/>test mode"]
+        GEM["Google Gemini<br/>gemini-3.6-flash"]
+    end
+
+    subgraph edge["Entry points — all behind src/proxy.ts"]
+        WHK["POST /api/webhooks/razorpay<br/>payment.failed · payment_link.paid<br/>HMAC verified, then acknowledged"]
+        TRG["POST /api/recovery/trigger<br/>batch run, bounded concurrency"]
+        SWP["POST /api/recovery/sweep<br/>abandonment + reconciliation"]
+        SIMR["/api/simulator/*<br/>demo builds only"]
+    end
+
+    subgraph agent["Agent"]
+        CLS["Classifier<br/>deterministic first"]
+        STR["STRATEGY_CONFIGS<br/>channels · cap · backoff"]
+        RC["Recovery Coordinator<br/>state machine"]
+        SR["Stopping rules<br/>pure, no I/O"]
+        COM["Communication Manager<br/>WhatsApp → SMS → voice<br/>dispatch simulated"]
+        AUD["Audit logger<br/>append-only"]
+    end
+
+    subgraph model["Response model — arm's length"]
+        RM["Declared coefficients<br/>seeded RNG"]
+    end
+
+    subgraph term["Terminal outcomes"]
+        TR(["resolved<br/>credited to the attempt"]):::good
+        TO(["opted_out<br/>DND set"]):::term
+        TX(["exhausted<br/>exception list"]):::term
+        TU(["uncontactable<br/>no contact on file"]):::term
+    end
+
+    DB[("SQLite / libSQL<br/>6 tables")]
+    UI["Dashboard<br/>metrics · audit · simulator"]
+    CUST(["Customer"])
+
+    RZP -->|signed delivery| WHK
+    WHK --> RC
+    TRG --> RC
+    SWP --> RC
+    SIMR -.->|signs a real delivery| WHK
+    SIMR -.->|plays the customer| RC
+
+    RC --> CLS
+    CLS -.->|only when confidence < 0.95| GEM
+    CLS --> STR
+    STR --> RC
+    RC --> SR
+    SR -->|allowed| COM
+    SR -.->|blocked, with reason| AUD
+    COM -.->|message copy| GEM
+    COM --> CUST
+    RC -->|create payment link| RZP
+    CUST -->|pays| RZP
+    CUST -.->|replies / STOP| RC
+
+    RC --> TR
+    RC --> TO
+    RC --> TX
+    RC --> TU
+
+    RC --> AUD
+    RC --> DB
+    AUD --> DB
+    TR --> DB
+    DB --> UI
+
+    TRG -.->|composed in the route, never imported| RM
+    RM -.->|drawn outcomes| RC
+
+    classDef llm fill:#EEF0FE,stroke:#4338CA,color:#1E1B4B
+    classDef det fill:#F4F6F8,stroke:#64748B,color:#16181D
+    classDef term fill:#F3F4F6,stroke:#6B7280,color:#101828
+    classDef good fill:#E7F4EF,stroke:#047857,color:#04301F
+    class GEM llm
+    class CLS,SR,STR det
+```
+
+Dotted edges are conditional or deliberately indirect, and three carry the design argument:
+
+- **`Classifier ⇢ Gemini`** fires only when the deterministic lookup returns confidence below
+  0.95. The common path never calls a model.
+- **`Stopping rules ⇢ Audit logger`** is the path taken when a rule *blocks* an action. A refusal
+  is recorded as deliberately as a dispatch, which is what makes a deferral legible instead of a
+  silent gap.
+- **`trigger ⇢ Response model`** is drawn as a route-level composition because no file under
+  `src/lib/recovery/` may import the response model and no file under `src/lib/simulation/` may
+  import the agent. Tests assert both directions — otherwise the agent would be marking its own
+  homework.
+
+**What is deliberately absent:** there is no scheduler, queue or worker pool. The batch runs
+inline, bounded by `RECOVERY_CONCURRENCY`. That is a real scale limit, stated rather than implied
+away by drawing a box for it.
+
+---
+
+## One recovery, end to end
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant R as Razorpay
+    participant W as Webhook route
+    participant C as Coordinator
+    participant K as Classifier
+    participant G as Gemini
+    participant S as Stopping rules
+    participant D as Database
+
+    R->>W: payment.failed (signed)
+    W->>W: verify HMAC-SHA256, constant time
+    W->>D: claim event id (insert-or-conflict)
+    W-->>R: 200 — acknowledge before working
+    W->>C: process claimed event
+
+    C->>K: error_source / error_step / error_reason
+    K-->>C: payment_link, confidence 1.0
+    Note over K,G: Gemini is not called —<br/>confidence is above 0.95
+
+    C->>S: may we dispatch?
+    S-->>C: no — 21:04 IST is outside 08:00–19:00
+    C->>D: audit: stopping_rule_triggered
+
+    Note over C: next run, inside the window
+    C->>S: may we dispatch?
+    S-->>C: yes
+    C->>R: create payment link (ref recov_<journey>_att1)
+    C->>G: write the message
+    G-->>C: copy (amount + link preserved, validated)
+    C->>D: recovery_action, attempt 1, WhatsApp
+
+    R->>W: payment_link.paid (signed)
+    W->>C: resolve by stamped reference
+    C->>D: journey resolved, credited to attempt 1
+```
+
+Two steps in that sequence are load-bearing. The acknowledgement is sent **before** the agent's
+work, because a webhook sender must not wait on downstream processing — the trade is that a later
+failure cannot be signalled back to Razorpay, which is why `/api/recovery/sweep` reconciles
+deliveries whose processing never finished. And the payment link carries
+`recov_<journeyId>_att<n>` from the moment it is created, so attribution is a fact rather than a
+guess: a payment arriving with neither that reference nor a known link id is recorded and credited
+to nothing.
+
+Every branch this happy path does not take — opt-out, exhaustion, an uncontactable customer, a
+rate-limited model — is drawn in [`docs/PROJECT_DOCUMENTATION.md`](docs/PROJECT_DOCUMENTATION.md#4-system-architecture).
+
+---
+
 ## Recovery journey state machine
 
 ```mermaid
