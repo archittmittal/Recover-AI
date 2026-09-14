@@ -6,6 +6,7 @@ import {
   ClassificationResult,
   classifyFailureDeterministic,
 } from '../recovery/classifier';
+import { callWithLlmLimit } from '../utils/concurrency';
 
 export async function classifyFailureWithLLM(
   input: ClassificationInput
@@ -37,14 +38,17 @@ Analyze this payment failure payload:
 - amount_in_paise: ${input.amount || 0}
 `;
 
-    const result = await model.generateContent({
-      contents: [
-        { role: 'user', parts: [{ text: `${CLASSIFICATION_SYSTEM_PROMPT}\n${prompt}` }] },
-      ],
-      generationConfig: {
-        responseMimeType: 'application/json',
-      },
-    });
+    // Behind the shared gate so a concurrent batch cannot burst Gemini into 429s.
+    const result = await callWithLlmLimit(() =>
+      model.generateContent({
+        contents: [
+          { role: 'user', parts: [{ text: `${CLASSIFICATION_SYSTEM_PROMPT}\n${prompt}` }] },
+        ],
+        generationConfig: {
+          responseMimeType: 'application/json',
+        },
+      })
+    );
 
     const responseText = result.response.text();
     const parsed = JSON.parse(responseText);
