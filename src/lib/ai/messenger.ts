@@ -3,6 +3,7 @@ import { getGeminiModel } from '../config';
 import { MESSAGE_GENERATION_SYSTEM_PROMPT } from './prompts';
 import { sanitizePromptInput } from './sanitize';
 import { formatPaise } from '../utils/money';
+import { callWithLlmLimit, isRateLimitError } from '../utils/concurrency';
 
 export interface MessageGenerationParams {
   customerName: string;
@@ -110,14 +111,19 @@ Generate a ${params.channel.toUpperCase()} message for:
 ${params.discountPercentage ? `- Discount Offered: ${params.discountPercentage}%` : ''}
 `;
 
-    const result = await model.generateContent({
-      contents: [
-        { role: 'user', parts: [{ text: `${MESSAGE_GENERATION_SYSTEM_PROMPT}\n${userPrompt}` }] },
-      ],
-      generationConfig: {
-        responseMimeType: 'application/json',
-      },
-    });
+    // Behind the shared gate: the batch runs journeys concurrently, and Gemini rejects bursts.
+    // Without this, widening the batch would convert most personalised messages into template
+    // ones — a silent quality regression that looks like a speed win.
+    const result = await callWithLlmLimit(() =>
+      model.generateContent({
+        contents: [
+          { role: 'user', parts: [{ text: `${MESSAGE_GENERATION_SYSTEM_PROMPT}\n${userPrompt}` }] },
+        ],
+        generationConfig: {
+          responseMimeType: 'application/json',
+        },
+      })
+    );
 
     const responseText = result.response.text();
     const parsed = JSON.parse(responseText);
@@ -154,6 +160,17 @@ ${params.discountPercentage ? `- Discount Offered: ${params.discountPercentage}%
       }
     }
   } catch (error) {
+    // Name the rate limit specifically. "LLM validation fallback" in the audit trail reads as
+    // "the model wrote something we rejected", which sent an earlier investigation looking at
+    // the output validator when the real cause was that no output ever arrived (429).
+    if (isRateLimitError(error)) {
+      console.warn('[ai:generateRecoveryMessage] Gemini rate limit reached, using template.');
+      return {
+        message: fallbackText,
+        llmReasoning: 'Deterministic template applied: Gemini rate limit (429) reached.',
+        isTemplateFallback: true,
+      };
+    }
     console.error('[ai:generateRecoveryMessage] Gemini generation error, using fallback:', error);
   }
 

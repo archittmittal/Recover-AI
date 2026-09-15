@@ -3,6 +3,7 @@ import { CONVERSATIONAL_REPLY_SYSTEM_PROMPT } from './prompts';
 import { detectOptOut } from '../recovery/stopping-rules';
 import { sanitizePromptInput } from './sanitize';
 import { formatPaise } from '../utils/money';
+import { callWithLlmLimit } from '../utils/concurrency';
 
 export interface ConversationInput {
   customerName: string;
@@ -69,14 +70,17 @@ Language: ${input.preferredLanguage || 'en'}
 ${input.previousAgentMessage ? `Previous outreach: "${input.previousAgentMessage}"` : ''}
 `;
 
-    const result = await model.generateContent({
-      contents: [
-        { role: 'user', parts: [{ text: `${CONVERSATIONAL_REPLY_SYSTEM_PROMPT}\n${userPrompt}` }] },
-      ],
-      generationConfig: {
-        responseMimeType: 'application/json',
-      },
-    });
+    // Behind the shared gate so a concurrent batch cannot burst Gemini into 429s.
+    const result = await callWithLlmLimit(() =>
+      model.generateContent({
+        contents: [
+          { role: 'user', parts: [{ text: `${CONVERSATIONAL_REPLY_SYSTEM_PROMPT}\n${userPrompt}` }] },
+        ],
+        generationConfig: {
+          responseMimeType: 'application/json',
+        },
+      })
+    );
 
     const responseText = result.response.text();
     const parsed = JSON.parse(responseText);

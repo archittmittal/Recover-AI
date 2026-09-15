@@ -251,10 +251,17 @@ than quietly worked around.
 The spec had `notify_by/{medium}` triggering WhatsApp, and a create-link payload containing
 `"notify": { "whatsapp": true }`. The API accepts `sms` or `email` only.
 
-*How we got out:* Corrected both. This matters beyond a one-line fix, because WhatsApp is attempt #1 in
-the escalation ladder and the entire channel argument rests on its ~90–98% open rate in India. The
-honest position is now explicit: WhatsApp delivery is **simulated in-app**, and no claim is made that
-Razorpay's link-notification API sends it.
+*How we got out:* Corrected both. This matters beyond a one-line fix, because WhatsApp is attempt #1
+in the escalation ladder. The honest position is now explicit: WhatsApp delivery is **simulated
+in-app**, and no claim is made that Razorpay's link-notification API sends it.
+
+A second correction followed later. The channel argument used to be propped up by a "90–98% open
+rate in India" figure, repeated in four places across the documentation and once in the dashboard
+itself. We never measured it and never cited it. It has been removed rather than sourced: the
+ordering of the ladder stands on its own — WhatsApp is where this market's messaging happens, SMS
+reaches a handset with no app, and a voice call is the last escalation before giving up — and a
+project whose whole claim is that every number is computed or a declared estimate cannot also
+carry a headline statistic it invented.
 
 **3. `error_source` is not a four-value enum.**
 
