@@ -28,7 +28,41 @@ jobs:
         with:
           persist-credentials: false
 
+      # Scorecard analyses public repositories. On a private one its very first call —
+      # ListCommits, over the GraphQL API — comes back "Resource not accessible by
+      # integration" and the run dies before a single check executes:
+      #
+      #   scorecard had an error: internal error: ListCommits:
+      #   error during graphqlHandler.setup: githubv4.Query:
+      #   Resource not accessible by integration
+      #
+      # `publish_results` likewise only works for a public repository. Rather than fail every
+      # push to main on a condition no code change can fix, detect it and skip — and start
+      # working on its own the moment the repository is made public. Mirrors the guard in
+      # codeql.yml, which exists for the same reason.
+      - name: Check Repository Visibility
+        id: visibility
+        run: |
+          status_code=$(curl -sS -o /tmp/repo.json -w "%{http_code}" \
+            -H "authorization: token ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "${{ github.api_url }}/repos/${{ github.repository }}")
+
+          if [[ "$status_code" != "200" ]]; then
+            echo "Unexpected API response ($status_code) while reading repository metadata." >&2
+            cat /tmp/repo.json >&2
+            exit 1
+          fi
+
+          if [[ "$(jq -r '.private' /tmp/repo.json)" == "true" ]]; then
+            echo "public=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping Scorecard: it does not support private repositories. Make the repository public to enable it."
+          else
+            echo "public=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run OpenSSF Scorecard Analysis
+        if: steps.visibility.outputs.public == 'true'
         uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
         with:
           results_file: results.sarif
@@ -36,6 +70,7 @@ jobs:
           publish_results: true
 
       - name: Upload Artifact
+        if: steps.visibility.outputs.public == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: SARIF file
@@ -43,6 +78,7 @@ jobs:
           retention-days: 5
 
       - name: Upload to GitHub Code Scanning
+        if: steps.visibility.outputs.public == 'true'
         uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         with:
           sarif_file: results.sarif
