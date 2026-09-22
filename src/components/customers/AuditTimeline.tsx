@@ -16,11 +16,13 @@ import {
   Cpu,
   User,
   Shield,
+  FastForward,
 } from 'lucide-react';
 
 export interface AuditLogEntry {
   id: string;
-  journeyId: string;
+  // Null for process-wide events — advancing the demo clock belongs to no single journey.
+  journeyId: string | null;
   actionId?: string | null;
   actor: 'system' | 'agent' | 'customer' | 'razorpay';
   eventType: string;
@@ -82,6 +84,14 @@ export function AuditTimeline({ logs, customerName = 'Customer' }: AuditTimeline
           color: 'text-sky-600 dark:text-sky-400',
           bg: 'bg-sky-50 dark:bg-sky-950/40',
           border: 'border-sky-200 dark:border-sky-800',
+        };
+      case 'clock_advanced':
+        return {
+          icon: FastForward,
+          title: 'Simulated Clock Advanced (System-Wide)',
+          color: 'text-violet-600 dark:text-violet-400',
+          bg: 'bg-violet-50 dark:bg-violet-950/40',
+          border: 'border-violet-200 dark:border-violet-800',
         };
       case 'stopping_rule_triggered':
       case 'customer_opted_out':
@@ -168,6 +178,15 @@ export function AuditTimeline({ logs, customerName = 'Customer' }: AuditTimeline
         const llmReasoning = typeof data.llmReasoning === 'string' ? data.llmReasoning : undefined;
         const rule = typeof data.rule === 'string' ? data.rule : undefined;
 
+        // A clock advance is not part of this customer's journey; it is the operator moving
+        // simulated time for the whole deployment. Say so on the row, so nobody reads it as
+        // something that happened to this customer.
+        const isSystemWide = log.journeyId === null;
+        const advancedMinutes =
+          typeof data.advancedMinutes === 'number' ? data.advancedMinutes : undefined;
+        const fromIso = typeof data.fromIso === 'string' ? data.fromIso : undefined;
+        const toIso = typeof data.toIso === 'string' ? data.toIso : undefined;
+
         return (
           <div key={log.id} className="relative group">
             {/* Timeline node icon */}
@@ -185,6 +204,14 @@ export function AuditTimeline({ logs, customerName = 'Customer' }: AuditTimeline
                     {visuals.title}
                   </span>
                   {getActorBadge(log.actor)}
+                  {isSystemWide && (
+                    <Badge
+                      variant="outline"
+                      className="bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 text-[10px]"
+                    >
+                      System-wide · not customer-specific
+                    </Badge>
+                  )}
                 </div>
                 <span className="text-[11px] font-mono text-zinc-500">
                   {log.createdAt}
@@ -207,6 +234,21 @@ export function AuditTimeline({ logs, customerName = 'Customer' }: AuditTimeline
                     AI Chain-of-Thought Reasoning:
                   </span>
                   {llmReasoning}
+                </div>
+              )}
+
+              {advancedMinutes !== undefined && fromIso && toIso && (
+                <div className="p-2.5 rounded-lg bg-violet-50/70 dark:bg-violet-950/30 border border-violet-100 dark:border-violet-900/40 text-xs text-violet-950 dark:text-violet-200 space-y-1">
+                  <span className="font-semibold text-violet-600 dark:text-violet-400 text-[10px] uppercase block">
+                    Simulated time moved forward by {advancedMinutes} minutes
+                  </span>
+                  <div className="font-mono text-[11px] break-all">
+                    {fromIso} → {toIso}
+                  </div>
+                  <div className="text-[11px] opacity-80">
+                    The clock only moves forward, so scheduled work is evaluated against this
+                    instant and never skipped or replayed.
+                  </div>
                 </div>
               )}
 

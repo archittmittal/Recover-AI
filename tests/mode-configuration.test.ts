@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { getMode, isLive, readCredential, requireCredential, getGeminiModel, describeIntegrations } from '../src/lib/config';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { getMode, isLive, readCredential, requireCredential, getGeminiModel, describeIntegrations, shouldSimulateOutcomes, shouldMockPaymentLinks } from '../src/lib/config';
 
 /**
  * RA-24 — mock vs live is declared, not inferred from the shape of a credential, and live
@@ -66,5 +66,104 @@ describe('preflight', () => {
     expect(line).toContain('mode=mock');
     expect(line).toContain('gemini=unset');
     expect(line).toContain('model=gemini-3.6-flash');
+  });
+});
+
+describe('credentials are never read at module scope', () => {
+  /**
+   * `next build` evaluates every route module to collect page data. Reading a credential in a
+   * client constructor therefore made the *build* depend on runtime secrets: with
+   * RECOVERAI_MODE=live and no key in the build environment, the deployment failed with
+   * "Failed to collect configuration for /api/recovery/sweep" — nowhere near the real cause.
+   *
+   * Importing the modules must stay harmless. The loud failure belongs at first use.
+   */
+  it('importing the clients in live mode with no credentials does not throw', async () => {
+    vi.stubEnv('RECOVERAI_MODE', 'live');
+    vi.stubEnv('GEMINI_API_KEY', 'XXXXXXXXXXXXXXXXXXXX');
+    vi.stubEnv('RAZORPAY_KEY_ID', 'XXXXXXXXXXXXXXXXXXXX');
+    vi.stubEnv('RAZORPAY_KEY_SECRET', 'XXXXXXXXXXXXXXXXXXXX');
+    vi.resetModules();
+
+    await expect(import('../src/lib/ai/gemini')).resolves.toBeDefined();
+    await expect(import('../src/lib/razorpay/client')).resolves.toBeDefined();
+  });
+
+  it('still fails loudly at first use', async () => {
+    vi.stubEnv('RECOVERAI_MODE', 'live');
+    vi.stubEnv('GEMINI_API_KEY', 'XXXXXXXXXXXXXXXXXXXX');
+    vi.resetModules();
+
+    const { gemini } = await import('../src/lib/ai/gemini');
+    expect(() => gemini.isAvailable()).toThrow(/GEMINI_API_KEY is missing or still a placeholder/);
+  });
+});
+
+describe('SIMULATE_OUTCOMES', () => {
+  /**
+   * Mock and live were mutually exclusive in a way that served no demo well: mock gave a
+   * populated recovery rate with no AI anywhere, live gave real Gemini copy and real payment
+   * links with nothing ever resolving. This flag is the seam between them, and it must stay
+   * explicit — a live deployment carrying real merchant traffic cannot have simulated recoveries
+   * appear in its numbers by accident.
+   */
+  it('always simulates in mock mode, where nothing else could decide an outcome', () => {
+    vi.stubEnv('RECOVERAI_MODE', 'mock');
+    vi.stubEnv('SIMULATE_OUTCOMES', '');
+    expect(shouldSimulateOutcomes()).toBe(true);
+  });
+
+  it('does not simulate in live mode by default', () => {
+    vi.stubEnv('RECOVERAI_MODE', 'live');
+    vi.stubEnv('SIMULATE_OUTCOMES', '');
+    expect(shouldSimulateOutcomes()).toBe(false);
+  });
+
+  it('simulates in live mode only when explicitly asked', () => {
+    vi.stubEnv('RECOVERAI_MODE', 'live');
+    vi.stubEnv('SIMULATE_OUTCOMES', 'true');
+    expect(shouldSimulateOutcomes()).toBe(true);
+  });
+
+  it('treats anything other than "true" as off', () => {
+    vi.stubEnv('RECOVERAI_MODE', 'live');
+    for (const value of ['false', '1', 'yes', 'TRUE ', 'maybe']) {
+      vi.stubEnv('SIMULATE_OUTCOMES', value);
+      expect(shouldSimulateOutcomes(), value).toBe(value.trim().toLowerCase() === 'true');
+    }
+  });
+});
+
+describe('MOCK_PAYMENT_LINKS', () => {
+  /**
+   * Razorpay's test mode caps payment links at 30 per account in total — discovered the hard way,
+   * mid-batch:
+   *
+   *     429 RATE_LIMIT_EXCEEDED "test mode limit of 30 reached for payment_link"
+   *
+   * Before this flag, the only way to stop calling Razorpay was RECOVERAI_MODE=mock, which also
+   * withholds the Gemini key. An exhausted link quota therefore cost you the LLM too — the one
+   * integration that still worked.
+   */
+  it('mocks links in mock mode, where nothing is called anyway', () => {
+    vi.stubEnv('RECOVERAI_MODE', 'mock');
+    vi.stubEnv('MOCK_PAYMENT_LINKS', '');
+    expect(shouldMockPaymentLinks()).toBe(true);
+  });
+
+  it('uses the real API in live mode by default', () => {
+    vi.stubEnv('RECOVERAI_MODE', 'live');
+    vi.stubEnv('MOCK_PAYMENT_LINKS', '');
+    expect(shouldMockPaymentLinks()).toBe(false);
+  });
+
+  it('fabricates links in live mode when asked, leaving the LLM live', () => {
+    vi.stubEnv('RECOVERAI_MODE', 'live');
+    vi.stubEnv('MOCK_PAYMENT_LINKS', 'true');
+    vi.stubEnv('GEMINI_API_KEY', 'a-real-looking-key');
+
+    expect(shouldMockPaymentLinks()).toBe(true);
+    // The point of the split: Razorpay is off, Gemini is not.
+    expect(requireCredential('GEMINI_API_KEY')).toBe('a-real-looking-key');
   });
 });

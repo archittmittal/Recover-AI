@@ -10,6 +10,7 @@ import {
   Clock,
   Activity,
 } from 'lucide-react';
+import { formatRupees as formatRupeesShared } from '@/lib/utils/money';
 
 export interface MetricsSummaryData {
   totalCustomers: number;
@@ -25,14 +26,26 @@ export interface MetricsSummaryData {
   exhaustedCount: number;
   optedOutCount: number;
   optOutRatePct: number;
-  avgRecoveryTimeMinutes: number;
+  /** Null until something has actually been recovered — never a plausible-looking default. */
+  avgRecoveryTimeMinutes: number | null;
+}
+
+export interface ArmMetricData {
+  arm: 'A' | 'B' | 'C';
+  label: string;
+  description: string;
+  journeyCount: number;
+  resolvedCount: number;
+  atRiskPaise: number;
+  recoveredPaise: number;
+  recoveryRatePct: number;
+  recoveryRateByCountPct: number;
 }
 
 export interface BaselineComparisonData {
-  armA_noAgentPct: number;
-  armB_rulesOnlyDunningPct: number;
-  armC_recoverAiPct: number;
+  arms: ArmMetricData[];
   netLiftPct: number;
+  isMeasurable: boolean;
 }
 
 interface MetricsCardsProps {
@@ -41,24 +54,27 @@ interface MetricsCardsProps {
 }
 
 export function MetricsCards({ summary, baseline }: MetricsCardsProps) {
-  const formatRupees = (rupees: number) => {
-    return `₹${rupees.toLocaleString('en-IN')}`;
-  };
+  const formatRupees = (rupees: number) => formatRupeesShared(rupees);
+
+  const armB = baseline.arms.find((a) => a.arm === 'B');
+  const armC = baseline.arms.find((a) => a.arm === 'C');
 
   const cards = [
     {
-      title: 'Revenue at Risk',
+      title: 'Revenue at risk',
       value: formatRupees(summary.totalAtRiskRupees),
-      subtext: `Across ${summary.totalFailures} payment failures`,
+      // Arm C's own cohort. The batch seeds the same failures into all three arms, so quoting
+      // the whole table here would triple the figure the product is reporting about itself.
+      subtext: `Arm C cohort · ${summary.totalJourneys} journeys`,
       icon: IndianRupee,
       color: 'text-rose-600 dark:text-rose-400',
       bg: 'bg-rose-50 dark:bg-rose-950/30',
       border: 'border-rose-100 dark:border-rose-900/30',
     },
     {
-      title: 'Recovered Revenue',
+      title: 'Recovered revenue',
       value: formatRupees(summary.totalRecoveredRupees),
-      badge: `${summary.recoveryRatePct}% Rate`,
+      badge: `${summary.recoveryRatePct}% rate`,
       subtext: `${summary.resolvedCount} successful recoveries`,
       icon: TrendingUp,
       color: 'text-emerald-600 dark:text-emerald-400',
@@ -66,36 +82,45 @@ export function MetricsCards({ summary, baseline }: MetricsCardsProps) {
       border: 'border-emerald-100 dark:border-emerald-900/30',
     },
     {
-      title: 'Net AI Lift (Arm C − B)',
-      value: `+${baseline.netLiftPct}%`,
-      subtext: `vs static rules baseline (${baseline.armB_rulesOnlyDunningPct}%)`,
-      badge: 'Defensible',
+      title: 'Net lift (C − B)',
+      // Signed, and blank until every arm has run. A lift card that always shows a positive
+      // number is not reporting a measurement (RA-22).
+      value: baseline.isMeasurable
+        ? `${baseline.netLiftPct >= 0 ? '+' : ''}${baseline.netLiftPct} pts`
+        : '—',
+      subtext: baseline.isMeasurable
+        ? `Arm C ${armC?.recoveryRatePct ?? 0}% vs Arm B ${armB?.recoveryRatePct ?? 0}% (n=${armB?.journeyCount ?? 0} per arm)`
+        : 'Run the batch to measure all three arms',
+      badge: baseline.isMeasurable ? 'Measured' : 'Not yet run',
       icon: Zap,
       color: 'text-indigo-600 dark:text-indigo-400',
       bg: 'bg-indigo-50 dark:bg-indigo-950/30',
       border: 'border-indigo-100 dark:border-indigo-900/30',
     },
     {
-      title: 'Active Journeys',
+      title: 'Active journeys',
       value: summary.activeCount.toString(),
-      subtext: `${summary.exhaustedCount} exhausted (3-attempt cap)`,
-      badge: 'In Progress',
+      subtext: `${summary.exhaustedCount} exhausted at the 3-attempt cap`,
+      badge: 'In progress',
       icon: Activity,
       color: 'text-blue-600 dark:text-blue-400',
       bg: 'bg-blue-50 dark:bg-blue-950/30',
       border: 'border-blue-100 dark:border-blue-900/30',
     },
     {
-      title: 'Avg Recovery Time',
-      value: `${summary.avgRecoveryTimeMinutes}m`,
-      subtext: 'Time-to-settlement post-failure',
+      title: 'Avg recovery time',
+      value: summary.avgRecoveryTimeMinutes != null ? `${summary.avgRecoveryTimeMinutes}m` : '—',
+      subtext:
+        summary.avgRecoveryTimeMinutes != null
+          ? 'Time-to-settlement post-failure'
+          : 'No recoveries yet',
       icon: Clock,
       color: 'text-amber-600 dark:text-amber-400',
       bg: 'bg-amber-50 dark:bg-amber-950/30',
       border: 'border-amber-100 dark:border-amber-900/30',
     },
     {
-      title: 'Opt-Out Rate (Stopping Rule)',
+      title: 'Opt-out rate',
       value: `${summary.optOutRatePct}%`,
       subtext: `${summary.optedOutCount} stopped via 'STOP' / DND`,
       badge: 'Target <5%',
@@ -107,7 +132,7 @@ export function MetricsCards({ summary, baseline }: MetricsCardsProps) {
   ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {cards.map((card, idx) => {
         const Icon = card.icon;
         return (
@@ -117,26 +142,26 @@ export function MetricsCards({ summary, baseline }: MetricsCardsProps) {
           >
             <CardContent className="p-4 flex flex-col justify-between h-full">
               <div className="flex items-center justify-between gap-2 mb-2">
-                <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 truncate">
+                <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 min-w-0">
                   {card.title}
                 </span>
-                <div className={`p-1.5 rounded-lg ${card.bg}`}>
+                <div className={`p-1.5 shrink-0 rounded-lg ${card.bg}`}>
                   <Icon className={`w-4 h-4 ${card.color}`} />
                 </div>
               </div>
 
               <div className="flex items-baseline justify-between gap-2">
-                <span className="text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+                <span className="text-xl font-bold tracking-tight tabular-nums text-zinc-900 dark:text-zinc-50">
                   {card.value}
                 </span>
                 {card.badge && (
-                  <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
+                  <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap shrink-0 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
                     {card.badge}
                   </span>
                 )}
               </div>
 
-              <span className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-2 line-clamp-1">
+              <span className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-2 line-clamp-2">
                 {card.subtext}
               </span>
             </CardContent>

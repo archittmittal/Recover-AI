@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import crypto from 'crypto';
 import { NextRequest } from 'next/server';
-import { middleware } from '../src/middleware';
+import { middleware } from '../src/proxy';
 import { resetRateLimitState, RATE_LIMIT_CAPACITY } from '../src/lib/utils/rate-limit';
 
 function buildRequest(opts: { contentLength?: number; ip?: string; path?: string } = {}) {

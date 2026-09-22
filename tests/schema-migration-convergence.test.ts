@@ -155,13 +155,55 @@ describe('RA-25 — schema convergence', () => {
     h.close();
   });
 
-  it('rejects a non-file DATABASE_URL rather than treating it as a filename', async () => {
-    process.env.DATABASE_URL = 'libsql://example.turso.io';
+  /**
+   * RA-28 changed this contract: `libsql://` is now served by the Turso driver rather than
+   * rejected. What must still be refused is a scheme neither driver understands — the original
+   * failure was `.replace(/^file:/, '')` leaving a remote URL untouched and better-sqlite3
+   * creating a local file literally named `libsql://…`, so the documented deployment "worked"
+   * and wrote to nowhere.
+   */
+  it('routes each DATABASE_URL scheme to the driver that can serve it', async () => {
     resetDbSingleton();
+    const { resolveDriver } = await import('../src/lib/db');
+
+    expect(resolveDriver('file:./data/recoverai.db')).toBe('better-sqlite3');
+    expect(resolveDriver('libsql://example.turso.io')).toBe('libsql');
+    expect(resolveDriver('https://example.turso.io')).toBe('libsql');
+
+    for (const unsupported of ['postgres://host/db', 'mysql://host/db', 'redis://host', 'db.sqlite']) {
+      expect(() => resolveDriver(unsupported), unsupported).toThrow(/Unsupported DATABASE_URL/);
+    }
+  });
+
+  it('builds a libSQL client for a remote URL rather than a file handle', async () => {
+    process.env.DATABASE_URL = 'libsql://example.turso.io';
+    process.env.DATABASE_AUTH_TOKEN = 'test-token-not-used-offline';
+    resetDbSingleton();
+
+    const { db } = await import('../src/lib/db');
+    const { customers } = await import('../src/lib/db/schema');
+
+    // Building the query must not throw and must not touch the filesystem: @libsql/client
+    // connects lazily, so this exercises driver selection without needing a live database.
+    const query = db.select().from(customers);
+    expect(query.toSQL().sql).toContain('customers');
+    expect(fs.existsSync('libsql://example.turso.io')).toBe(false);
+
+    delete process.env.DATABASE_AUTH_TOKEN;
+  });
+
+  it('refuses a remote database with no auth token instead of connecting anonymously', async () => {
+    process.env.DATABASE_URL = 'libsql://example.turso.io';
+    const previousToken = process.env.DATABASE_AUTH_TOKEN;
+    delete process.env.DATABASE_AUTH_TOKEN;
+    resetDbSingleton();
+
     const { db } = await import('../src/lib/db');
     const { customers } = await import('../src/lib/db/schema');
     // The guard runs inside getOrCreateDb(), which the Proxy invokes synchronously.
-    expect(() => db.select().from(customers)).toThrow(/Unsupported DATABASE_URL/);
+    expect(() => db.select().from(customers)).toThrow(/DATABASE_AUTH_TOKEN is unset/);
+
+    if (previousToken !== undefined) process.env.DATABASE_AUTH_TOKEN = previousToken;
   });
 });
 

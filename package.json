@@ -11,11 +11,15 @@
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:check": "drizzle-kit check"
+    "db:check": "drizzle-kit check",
+    "eval:arms": "vitest run --config vitest.eval.mts scripts/evaluate-arms.eval.ts",
+    "db:verify": "vitest run --config vitest.eval.mts scripts/deploy-check.eval.ts",
+    "demo:populate": "vitest run --config vitest.eval.mts scripts/populate-demo.eval.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
     "@google/generative-ai": "^0.24.1",
+    "@libsql/client": "^0.17.4",
     "better-sqlite3": "^13.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -27,7 +31,6 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "recharts": "^3.10.1",
-    "shadcn": "^4.19.0",
     "tailwind-merge": "^3.6.0",
     "tw-animate-css": "^1.4.0"
   },
@@ -42,6 +45,7 @@
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.3.3",
+    "shadcn": "^4.19.0",
     "tailwindcss": "^4",
     "typescript": "^6",
     "vitest": "^4.1.11"

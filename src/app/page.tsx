@@ -14,8 +14,9 @@ import {
   RotateCcw,
   RefreshCw,
   Loader2,
+  FlaskConical,
 } from 'lucide-react';
-import { ChannelMetric, FailureTypeMetric, StrategyMetric } from './api/metrics/route';
+import { ChannelMetric, FailureTypeMetric, StrategyMetric, MetricsProvenance } from './api/metrics/route';
 import { CustomerListItem } from './api/customers/route';
 
 export default function DashboardPage() {
@@ -25,6 +26,7 @@ export default function DashboardPage() {
   const [failureMetrics, setFailureMetrics] = useState<FailureTypeMetric[]>([]);
   const [strategyMetrics, setStrategyMetrics] = useState<StrategyMetric[]>([]);
   const [customersList, setCustomersList] = useState<CustomerListItem[]>([]);
+  const [provenance, setProvenance] = useState<MetricsProvenance | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSeeding, setIsSeeding] = useState(false);
@@ -45,6 +47,7 @@ export default function DashboardPage() {
         setChannelMetrics(metricsJson.data.channelMetrics || []);
         setFailureMetrics(metricsJson.data.failureTypeMetrics || []);
         setStrategyMetrics(metricsJson.data.strategyMetrics || []);
+        setProvenance(metricsJson.data.provenance ?? null);
       }
 
       if (customersJson.success && customersJson.data) {
@@ -78,6 +81,7 @@ export default function DashboardPage() {
           setChannelMetrics(metricsJson.data.channelMetrics || []);
           setFailureMetrics(metricsJson.data.failureTypeMetrics || []);
           setStrategyMetrics(metricsJson.data.strategyMetrics || []);
+        setProvenance(metricsJson.data.provenance ?? null);
         }
 
         if (customersJson.success && customersJson.data) {
@@ -124,17 +128,17 @@ export default function DashboardPage() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {/* Top Header Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-zinc-200/80 dark:border-zinc-800">
-          <div>
+          <div className="min-w-0">
             <h1 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-              Executive Revenue Recovery Command Center
+              Recovery overview
             </h1>
             <p className="text-xs text-zinc-500 mt-0.5">
-              Live Razorpay autonomous dunning, multi-channel failover, and RBI contact-hours
-              compliance monitoring.
+              Autonomous dunning, channel escalation and contact-hours enforcement, measured
+              over a synthetic batch against a rules-only baseline.
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <Button
               variant="outline"
               size="sm"
@@ -143,7 +147,7 @@ export default function DashboardPage() {
               className="text-xs font-medium border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100"
             >
               <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-              Refresh Analytics
+              Refresh
             </Button>
           </div>
         </div>
@@ -158,11 +162,11 @@ export default function DashboardPage() {
             </div>
             <div className="space-y-1">
               <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">
-                Welcome to RecoverAI
+                No batch seeded yet
               </h2>
               <p className="text-xs text-zinc-500">
-                Autonomous Revenue Recovery Agent for Razorpay Buildathon 2026. Seed synthetic
-                payment failures to observe the agent in action.
+                Seed a synthetic batch of payment failures to run the agent across all three
+                evaluation arms.
               </p>
             </div>
 
@@ -174,18 +178,38 @@ export default function DashboardPage() {
               {isSeeding ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Generating 50+ Synthetic Failures...
+                  Seeding batch...
                 </>
               ) : (
                 <>
                   <RotateCcw className="w-4 h-4 mr-2" />
-                  Seed 50+ Failures Batch
+                  Seed failure batch
                 </>
               )}
             </Button>
           </div>
         ) : (
           <>
+            {/*
+              Every figure below is a simulation output, and the dashboard says so in the one
+              place a judge reads first. Before RA-23 the only route to a recovery was a human
+              clicking "Pay" in the simulator, so the recovery rate was a count of button
+              presses presented as a measured result.
+            */}
+            {provenance?.outcomesAreSimulated !== false && (
+            <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/20 px-4 py-3">
+              <FlaskConical className="w-4 h-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+              <p className="text-xs text-amber-900 dark:text-amber-200">
+                <span className="font-semibold">Simulated figures.</span> Outcomes are drawn from
+                the declared response model in{' '}
+                <code className="font-mono text-[11px]">docs/SIMULATION_MODEL.md</code> over a
+                synthetic batch, using seed{' '}
+                <code className="font-mono text-[11px]">{provenance?.simulationSeed ?? '—'}</code>.
+                These are simulation outputs against that model — not recovered rupees.
+              </p>
+            </div>
+            )}
+
             {/* 1. KPI Summary Cards */}
             {baseline && <MetricsCards summary={summary} baseline={baseline} />}
 

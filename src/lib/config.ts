@@ -13,9 +13,20 @@
 
 export type RecoverAiMode = 'mock' | 'live';
 
-/** Credentials still holding their .env.example placeholder value. */
+/**
+ * A value still holding its `.env.example` template form.
+ *
+ * Exported because the auth layer needs exactly this test and nothing more: a session secret
+ * containing the substring "mock" is a perfectly good secret, while one containing the
+ * `XXXXXXXX` marker is the literal text shipped in the public repository.
+ */
+export function isTemplatePlaceholder(value: string | undefined): boolean {
+  return !value || value.includes('XXXXXXXX');
+}
+
+/** Credentials still holding their .env.example placeholder value, or explicitly mocked. */
 function isPlaceholder(value: string | undefined): boolean {
-  return !value || value.includes('XXXXXXXX') || value.includes('mock');
+  return isTemplatePlaceholder(value) || value!.includes('mock');
 }
 
 export function getMode(): RecoverAiMode {
@@ -47,7 +58,14 @@ export function readCredential(name: string): string | undefined {
 
 export function requireCredential(name: string): string | undefined {
   const value = process.env[name];
-  if (!isLive()) return isPlaceholder(value) ? undefined : value;
+
+  // Mock mode hands out no credentials, even real ones. `.env.example` promises "mock (default)
+  // — no outbound calls; payment links and LLM copy are simulated", and that was false: a
+  // configured GEMINI_API_KEY was returned here, so the Gemini client initialised and every
+  // journey made a live LLM call. A mock-mode batch run took two minutes of real API traffic,
+  // and the deployed webhook handler spent seconds per delivery on a call the mode says it does
+  // not make. Set RECOVERAI_MODE=live to actually use the models.
+  if (!isLive()) return undefined;
 
   if (isPlaceholder(value)) {
     throw new Error(
@@ -68,6 +86,68 @@ export function requireCredential(name: string): string | undefined {
  */
 export function getGeminiModel(): string {
   return process.env.GEMINI_MODEL?.trim() || 'gemini-3.6-flash';
+}
+
+/**
+ * The seed for the simulation response model (RA-23).
+ *
+ * Deliberately not 12345, the fixture seed in `src/lib/db/seed.ts`. One shared seed would mean
+ * that adding a customer name to the fixture list silently moves every recovery outcome, which
+ * makes a "reproducible" result reproducible only until someone edits an unrelated array.
+ */
+export const DEFAULT_SIMULATION_SEED = 20260823;
+
+export function getSimulationSeed(): number {
+  const raw = (process.env.SIMULATION_SEED || '').trim();
+  if (raw === '') return DEFAULT_SIMULATION_SEED;
+
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed)) {
+    throw new Error(`[config] Invalid SIMULATION_SEED="${raw}". Expected an integer.`);
+  }
+  return parsed;
+}
+
+/**
+ * Whether the declared response model decides recovery outcomes.
+ *
+ * In mock mode it always does — nothing else could, since no real payment can arrive. In live
+ * mode outcomes normally come from Razorpay webhooks, and inventing recoveries alongside real
+ * ones would corrupt a real merchant's numbers.
+ *
+ * `SIMULATE_OUTCOMES=true` overrides that for the case the two modes could not previously serve
+ * together: a demo that wants real Gemini copy and real payment links *and* a populated recovery
+ * rate, without waiting for 150 people to pay. It is deliberately a separate switch rather than a
+ * widening of "mock", so the choice is visible in the environment, and `GET /api/metrics` reports
+ * it in `provenance` so the dashboard keeps saying the figures are simulated.
+ *
+ * A deployment carrying real merchant traffic must leave it unset.
+ */
+export function shouldSimulateOutcomes(): boolean {
+  if (!isLive()) return true;
+  return (process.env.SIMULATE_OUTCOMES || '').trim().toLowerCase() === 'true';
+}
+
+/**
+ * Whether Razorpay calls are simulated even in live mode.
+ *
+ * Razorpay's test mode caps payment links at **30 per account, in total** — not per minute:
+ *
+ *     429 {"code":"RATE_LIMIT_EXCEEDED",
+ *          "description":"test mode limit of 30 reached for payment_link"}
+ *
+ * A seeded batch dispatches a hundred or more, so a full live run against a test account is not
+ * merely slow, it is impossible. Before this flag the only way to stop calling Razorpay was
+ * `RECOVERAI_MODE=mock`, which also withholds the Gemini key — so an exhausted payment-link quota
+ * silently cost you the LLM as well, which is the one integration that still worked.
+ *
+ * Set `MOCK_PAYMENT_LINKS=true` to fabricate links while everything else stays live. The mode
+ * remains declared rather than inferred; this just makes the declaration finer-grained than one
+ * switch for two very different services.
+ */
+export function shouldMockPaymentLinks(): boolean {
+  if (!isLive()) return true;
+  return (process.env.MOCK_PAYMENT_LINKS || '').trim().toLowerCase() === 'true';
 }
 
 /** One line at startup naming what is actually wired, so a silent downgrade is visible. */

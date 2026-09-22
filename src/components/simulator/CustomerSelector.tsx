@@ -3,7 +3,9 @@
 import React from 'react';
 import { CustomerListItem } from '@/app/api/customers/route';
 import { JourneyStatusBadge } from '@/components/customers/JourneyStatusBadge';
+import { ArmBadge } from '@/components/customers/ArmBadge';
 import { ChevronRight, UserX } from 'lucide-react';
+import { formatPaise } from '@/lib/utils/money';
 
 interface CustomerSelectorProps {
   customers: CustomerListItem[];
@@ -32,12 +34,12 @@ export function CustomerSelector({
     <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
       {customers.map((cust) => {
         const isSelected = cust.id === selectedCustomerId;
-        const atRiskRupees = (cust.amountAtRiskPaise / 100).toLocaleString('en-IN');
+        const atRiskLabel = formatPaise(cust.amountAtRiskPaise);
 
         return (
           <button
             type="button"
-            key={cust.id}
+            key={cust.journeyId ?? cust.id}
             onClick={() => onSelectCustomer(cust.id)}
             className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
               isSelected
@@ -57,11 +59,14 @@ export function CustomerSelector({
               </div>
 
               <div className="min-w-0">
-                <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">
-                  {cust.name}
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                    {cust.name}
+                  </span>
+                  {cust.arm && <ArmBadge arm={cust.arm} />}
                 </div>
                 <div className="text-[11px] text-zinc-500 font-mono truncate">
-                  ₹{atRiskRupees} • {cust.errorReason}
+                  {atRiskLabel} • {cust.errorReason}
                 </div>
               </div>
             </div>

@@ -81,9 +81,19 @@ describe('Recovery Strategies & Escalation Matrix Test Suite', () => {
   });
 
   describe('3. Strategy Configuration Safeguards', () => {
-    it('ensures all strategies have maximum attempt limits of <= 3', () => {
+    it('ensures all outreach strategies have maximum attempt limits of <= 3', () => {
       for (const config of Object.values(STRATEGY_CONFIGS)) {
         expect(config.maxAttempts).toBeLessThanOrEqual(3);
+
+        // no_outreach is Arm A's control (RA-22): it exists precisely to dispatch nothing, so
+        // it is the one config whose attempt cap and channel ladder must be empty. Every other
+        // strategy still has to be able to reach a customer.
+        if (config.strategy === 'no_outreach') {
+          expect(config.maxAttempts).toBe(0);
+          expect(config.channelSequence).toHaveLength(0);
+          continue;
+        }
+
         expect(config.maxAttempts).toBeGreaterThan(0);
         expect(config.channelSequence.length).toBeGreaterThan(0);
       }

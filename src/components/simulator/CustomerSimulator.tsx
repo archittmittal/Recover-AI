@@ -16,6 +16,7 @@ import {
   Sparkles,
   CheckCircle2,
 } from 'lucide-react';
+import { formatPaise } from '@/lib/utils/money';
 
 export interface SimCustomer {
   id: string;
@@ -109,7 +110,7 @@ export function CustomerSimulator({
     messages.push({
       id: 'msg_init',
       sender: 'system',
-      content: `⚠️ Payment Failure Detected: ₹${((journey.amountAtRisk || 0) / 100).toLocaleString(
+      content: `Payment failure detected: ₹${((journey.amountAtRisk || 0) / 100).toLocaleString(
         'en-IN'
       )} (${journey.strategy?.replace(/_/g, ' ')})`,
       timestamp: journey.createdAt || '',
@@ -191,9 +192,9 @@ export function CustomerSimulator({
       <Card className="border-zinc-200 dark:border-zinc-800 shadow-xs h-full flex items-center justify-center p-12 text-center">
         <div className="space-y-2 text-zinc-500">
           <HelpCircle className="w-8 h-8 mx-auto text-zinc-400" />
-          <div className="text-sm font-semibold">Select a customer from the left panel</div>
+          <div className="text-sm font-semibold">Select a customer</div>
           <div className="text-xs">
-            Play as any customer in the synthetic batch to test recovery links, stopping rules, and AI replies.
+            Reply as any customer in the batch to exercise payment, opt-out and conversational paths.
           </div>
         </div>
       </Card>
@@ -205,9 +206,9 @@ export function CustomerSimulator({
       {/* Header with Customer Metadata */}
       <CardHeader className="pb-3 border-b border-zinc-100 dark:border-zinc-800 shrink-0">
         <div className="flex items-center justify-between gap-3">
-          <div>
-            <CardTitle className="text-base font-bold flex items-center gap-2 text-zinc-900 dark:text-zinc-50">
-              <span>Customer Sandbox: {customer.name}</span>
+          <div className="min-w-0">
+            <CardTitle className="text-base font-bold flex items-center gap-2 flex-wrap text-zinc-900 dark:text-zinc-50">
+              <span>{customer.name}</span>
               {journey && <JourneyStatusBadge status={journey.status} />}
             </CardTitle>
             <CardDescription className="text-xs text-zinc-500 mt-0.5">
@@ -215,13 +216,13 @@ export function CustomerSimulator({
             </CardDescription>
           </div>
 
-          <div className="text-right">
-            <div className="text-xs font-bold text-rose-600 dark:text-rose-400 font-mono">
-              ₹{((journey?.amountAtRisk || 0) / 100).toLocaleString('en-IN')} At Risk
+          <div className="text-right shrink-0">
+            <div className="text-xs font-bold text-rose-600 dark:text-rose-400 font-mono whitespace-nowrap">
+              {formatPaise(journey?.amountAtRisk || 0)} at risk
             </div>
             {journey && journey.amountRecovered > 0 && (
-              <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                ₹{((journey.amountRecovered || 0) / 100).toLocaleString('en-IN')} Recovered
+              <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 font-mono whitespace-nowrap">
+                {formatPaise(journey.amountRecovered || 0)} recovered
               </div>
             )}
           </div>
@@ -234,10 +235,10 @@ export function CustomerSimulator({
           <div className="h-full flex flex-col items-center justify-center text-center p-8 text-zinc-500">
             <Sparkles className="w-8 h-8 text-indigo-500 mb-2" />
             <div className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-              Ready for Recovery Outreach
+              No outreach yet
             </div>
             <div className="text-xs text-zinc-500 mt-1 max-w-sm">
-              Trigger recovery to dispatch WhatsApp / SMS outreach to {customer.name}.
+              Run the agent to dispatch the first attempt to {customer.name}.
             </div>
           </div>
         ) : (
@@ -264,7 +265,7 @@ export function CustomerSimulator({
             ) : (
               <CreditCard className="w-3.5 h-3.5 mr-1" />
             )}
-            💳 Pay with Link
+            Pay with link
           </Button>
 
           <Button
@@ -275,7 +276,7 @@ export function CustomerSimulator({
             className="h-7 text-xs text-rose-700 border-rose-200 hover:bg-rose-50 dark:border-rose-900/40 dark:text-rose-300 font-medium"
           >
             <Ban className="w-3.5 h-3.5 mr-1" />
-            🛑 Send &apos;STOP&apos; (Opt-Out)
+            Send &apos;STOP&apos;
           </Button>
 
           <Button

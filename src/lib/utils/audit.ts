@@ -7,7 +7,8 @@ import { maskPiiDeep } from './pii';
 export type AuditActor = 'system' | 'agent' | 'customer' | 'razorpay';
 
 export interface AuditLogParams {
-  journeyId: string;
+  /** Null for process-wide events that belong to no journey, such as a demo clock advance. */
+  journeyId: string | null;
   actionId?: string | null;
   actor: AuditActor;
   eventType: string;
@@ -24,7 +25,7 @@ export async function writeAuditLog(params: AuditLogParams): Promise<string> {
   
   await db.insert(auditLogs).values({
     id: logId,
-    journeyId: params.journeyId,
+    journeyId: params.journeyId ?? null,
     actionId: params.actionId || null,
     actor: params.actor,
     eventType: params.eventType,

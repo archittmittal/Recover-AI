@@ -5,20 +5,33 @@ import {
   RazorpaySubscriptionEntity,
 } from './types';
 import { nanoid } from 'nanoid';
-import { isLive, requireCredential } from '../config';
+import { requireCredential, shouldMockPaymentLinks } from '../config';
 
 export class RazorpayClient {
-  private keyId: string;
-  private keySecret: string;
+  private keyId = '';
+  private keySecret = '';
   private baseUrl: string;
+  private initialised = false;
 
   constructor() {
-    this.keyId = requireCredential('RAZORPAY_KEY_ID') || '';
-    this.keySecret = requireCredential('RAZORPAY_KEY_SECRET') || '';
     this.baseUrl = 'https://api.razorpay.com/v1';
   }
 
+  /**
+   * Read on first use rather than at construction, for the same reason as GeminiClient: this
+   * module is evaluated during `next build`, and a credential read there makes the build depend
+   * on runtime secrets. A live-mode build with no keys in its environment failed before any
+   * request was served.
+   */
+  private ensureInitialised(): void {
+    if (this.initialised) return;
+    this.initialised = true;
+    this.keyId = requireCredential('RAZORPAY_KEY_ID') || '';
+    this.keySecret = requireCredential('RAZORPAY_KEY_SECRET') || '';
+  }
+
   private getAuthHeader(): string {
+    this.ensureInitialised();
     const auth = Buffer.from(`${this.keyId}:${this.keySecret}`).toString('base64');
     return `Basic ${auth}`;
   }
@@ -29,7 +42,10 @@ export class RazorpayClient {
    * remaining check is only a defensive guard.
    */
   private isMockMode(): boolean {
-    return !isLive() || !this.keyId || !this.keySecret;
+    this.ensureInitialised();
+    // MOCK_PAYMENT_LINKS lets a live deployment keep its real Gemini calls while fabricating
+    // links, which is the only workable configuration once a test account's 30-link cap is spent.
+    return shouldMockPaymentLinks() || !this.keyId || !this.keySecret;
   }
 
   /**

@@ -1,3 +1,5 @@
+import { formatPaise } from '../utils/money';
+
 export interface VoiceCallPayload {
   toPhone: string;
   customerName: string;
@@ -22,7 +24,7 @@ export interface VoiceCallResult {
 export async function simulateVoiceCall(
   payload: VoiceCallPayload
 ): Promise<VoiceCallResult> {
-  const rupeeAmount = `₹${(payload.amount / 100).toLocaleString('en-IN')}`;
+  const rupeeAmount = formatPaise(payload.amount);
   const name = payload.customerName.split(' ')[0] || 'Customer';
 
   let script: string;
