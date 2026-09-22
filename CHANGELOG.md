@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **chore(deps)(deps): bump nanoid from 5.1.16 to 6.0.1** in [#107](https://github.com/archittmittal/Recover-AI/pull/107) by @archittmittal
 
 ### CI/CD & Build
+- **configure automated changelog updater to open pull requests** in [#155](https://github.com/archittmittal/Recover-AI/pull/155) by @archittmittal
 - **ci(actions)(deps): bump the github-actions group with 8 updates** in [#109](https://github.com/archittmittal/Recover-AI/pull/109) by @archittmittal
 - **update changelog workflow to push-to-main trigger with skip-ci** in [#112](https://github.com/archittmittal/Recover-AI/pull/112) by @purvanshjoshi
 
