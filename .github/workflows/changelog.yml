@@ -144,7 +144,7 @@ jobs:
 
       - name: Create Pull Request for Changelog Update
         if: steps.update_changelog.outputs.updated == 'true'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "docs(changelog): update CHANGELOG.md for PR #${{ steps.update_changelog.outputs.pr_number }}"
